@@ -1,4 +1,5 @@
 ﻿using AAEmu.Game.GameData;
+using AAEmu.Game.Models.Game.Quests.Acts;
 using AAEmu.Game.Models.Game.Quests.Static;
 using AAEmu.Game.Models.Game.Units;
 
@@ -52,6 +53,15 @@ public class QuestStep(QuestComponentKind step, Quest parent)
     public bool RunComponents()
     {
         var res = true;
+        // LetItDone normally keeps progress open for a report act. Auto-completing quests
+        // without one need to advance when their objectives are complete.
+        var letItDoneUsesReportAct = Parent.Template.LetItDone &&
+            Parent.Template.Components.Values
+                .SelectMany(component => component.ActTemplates)
+                .Any(act => act is QuestActConReportDoodad or
+                    QuestActConReportJournal or
+                    QuestActConReportNpc or
+                    QuestActConReportNpcGroup);
 
         // Cache which components are active
         foreach (var questComponent in Components.Values)
@@ -111,7 +121,7 @@ public class QuestStep(QuestComponentKind step, Quest parent)
                 ? QuestStatus.Ready
                 : QuestStatus.Progress;
         }
-        else if (ThisStep == QuestComponentKind.Progress && Parent.Template.LetItDone)
+        else if (ThisStep == QuestComponentKind.Progress && letItDoneUsesReportAct)
         {
             // Validate using combined from all components
             var objectiveStatus = Parent.GetQuestObjectiveStatus();
@@ -125,7 +135,7 @@ public class QuestStep(QuestComponentKind step, Quest parent)
         res &= Parent.DistributeRewards(true);
 
         // LetItBeDone type of quests, are always forced forward using the Report Acts
-        if (ThisStep == QuestComponentKind.Progress && Parent.Template.LetItDone)
+        if (ThisStep == QuestComponentKind.Progress && letItDoneUsesReportAct)
             res = false;
 
         return res;

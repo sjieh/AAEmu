@@ -20,7 +20,7 @@ public class CSQuestTalkMadePacket() : GamePacket(CSOffsets.CSQuestTalkMadePacke
 
         Logger.Warn("QuestTalkMade: npcObjId {0}, questContextId {1}, questCompId {2}, questActId {3}", _npcObjId, _questContextId, _questCompId, _questActId);
         //Connection.ActiveChar.Quests.OnTalkMade(_npcObjId, _questContextId, _questCompId, _questActId);
-        // инициируем событие
+        // Raise the event.
         //Task.Run(() => QuestManager.Instance.DoTalkMadeEvents(Connection.ActiveChar, _npcObjId, _questContextId, _questCompId, _questActId));
         if (Connection != null)
         {

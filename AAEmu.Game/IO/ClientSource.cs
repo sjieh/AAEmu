@@ -9,6 +9,7 @@ public class ClientSource
     public ClientSourceType SourceType { get; set; }
     public string PathName { get; set; } // Directory Name or game_pak File Name
     public AAPak GamePak { get; set; }
+    private string[] _gamePakFileNames = [];
 
     public bool Open()
     {
@@ -19,6 +20,7 @@ public class ClientSource
             case ClientSourceType.GamePak:
                 GamePak = new AAPak(PathName);
                 // GamePak.GenerateFolderList();
+                _gamePakFileNames = GamePak.isOpen ? GamePak.pakFiles.Keys.ToArray() : [];
                 return GamePak.isOpen;
             default:
                 return false;
@@ -30,6 +32,7 @@ public class ClientSource
         if (SourceType == ClientSourceType.GamePak && GamePak != null)
         {
             GamePak.ClosePak();
+            _gamePakFileNames = [];
         }
     }
 
@@ -86,32 +89,43 @@ public class ClientSource
                 }
             case ClientSourceType.GamePak:
                 {
-                    var rootDir = directory.Replace('/', Path.DirectorySeparatorChar).Replace(Path.DirectorySeparatorChar, '/').ToLower();
-                    var wildCard = WildcardToRegex("*" + searchPattern.ToLower() + "*");// Hopefully this behaves the same as the Directory.GetFiles pattern
+                    var rootDir = directory
+                        .Replace('/', Path.DirectorySeparatorChar)
+                        .Replace(Path.DirectorySeparatorChar, '/');
+                    var hasSearchPattern = !string.IsNullOrWhiteSpace(searchPattern);
+                    var hasWildcard = hasSearchPattern && searchPattern.IndexOfAny(['*', '?']) >= 0;
                     if (includeSubDirectories)
                     {
-                        // Ordinal, not CurrentCulture: these are pak paths, so a culture-sensitive
-                        // comparison is both semantically wrong and routed through native ICU. The
-                        // ICU path crashed the whole process with 0xC0000005 when a plot asked for
-                        // terrain height (Plot.RunAsync -> GetHeight -> VerifyCellLoaded ->
-                        // LoadBaiFiles -> here) while the startup BAI loader was still enumerating,
-                        // and it also ran over all ~523k pak entries per call. Snapshot the keys so
-                        // the enumeration cannot observe the dictionary mid-write either.
-                        foreach (var pfiName in GamePak.pakFiles.Keys.ToArray())
+                        var wildCardRegex = hasWildcard
+                            ? new Regex(
+                                WildcardToRegex("*" + searchPattern + "*"),
+                                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)
+                            : null;
+
+                        // These are immutable paths in a read-only client pak. Reuse the snapshot
+                        // captured by Open() so every directory query avoids another full key copy.
+                        // Ordinal comparisons also avoid culture-sensitive path matching.
+                        var fileNames = _gamePakFileNames.Length == 0
+                            ? GamePak.pakFiles.Keys.ToArray()
+                            : _gamePakFileNames;
+                        foreach (var pfiName in fileNames)
                         {
                             if (pfiName.StartsWith(rootDir, System.StringComparison.OrdinalIgnoreCase))
                             {
-                                if (string.IsNullOrWhiteSpace(searchPattern) ||
-                                    Regex.Match(pfiName.ToLower(), wildCard).Success)
+                                if (!hasSearchPattern ||
+                                    (hasWildcard
+                                        ? wildCardRegex!.IsMatch(pfiName)
+                                        : pfiName.Contains(searchPattern, System.StringComparison.OrdinalIgnoreCase)))
                                     list.Add(pfiName);
                             }
                         }
                     }
                     else
                     {
+                        var wildCardPattern = WildcardToRegex("*" + searchPattern.ToLower() + "*");
                         var files = GamePak.GetFilesInDirectory(rootDir);
                         foreach (var pfi in files)
-                            if (string.IsNullOrWhiteSpace(searchPattern) || Regex.Match(pfi.name, wildCard).Success)
+                            if (!hasSearchPattern || Regex.Match(pfi.name, wildCardPattern).Success)
                                 list.Add(pfi.name);
                     }
                     break;

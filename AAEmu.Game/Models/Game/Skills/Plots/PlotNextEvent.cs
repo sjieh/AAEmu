@@ -1,4 +1,5 @@
 using AAEmu.Game.Core.Managers;
+using AAEmu.Game.Models.Game.Skills;
 using AAEmu.Game.Models.Game.Skills.Effects;
 using AAEmu.Game.Models.Game.Skills.Plots.Tree;
 using AAEmu.Game.Models.Game.Skills.Templates;
@@ -95,7 +96,11 @@ public class PlotNextEvent
 
     public int GetDelay(PlotState state, PlotTargetInfo eventInstance, PlotNode node)
     {
-        var animTime = (int)(GetAnimDelay(node.Event.Effects) * (state.Caster.GlobalCooldownMul / 100f));
+        var animationFactor = SpeedMultiplierRules.AnimationFactor(
+            state.Caster.AttackSpeedRating,
+            state.Caster.AttackAnimSpeedRating,
+            state.Caster.GlobalCooldownMul / 100.0);
+        var animTime = (int)(GetAnimDelay(node.Event.Effects) * animationFactor);
         var projectileTime = GetProjectileDelay(eventInstance.Source, eventInstance.Target);
         var skillCtrlTime = GetSkillControllerDelay(node);
         var delay = animTime + projectileTime + skillCtrlTime;

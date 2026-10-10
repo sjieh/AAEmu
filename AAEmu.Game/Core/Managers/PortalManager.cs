@@ -47,6 +47,26 @@ public class PortalManager(ILocalizationManager localizationManager, IWorldManag
     private readonly Dictionary<uint, HashSet<Models.Game.Units.Portal>> _ownerPortals = [];
     private readonly Lock _ownerPortalsLock = new();
 
+    /// <summary>
+    /// Gets the destination zones for currently live player-opened portals. The Zone Manager uses
+    /// this snapshot while auto zone management is running so a portal's destination can be
+    /// preloaded and held until the portal is removed.
+    /// </summary>
+    public IReadOnlyList<uint> GetOpenPortalDestinationZoneIds()
+    {
+        lock (_ownerPortalsLock)
+        {
+            return _ownerPortals.Values
+                .SelectMany(portals => portals)
+                .Where(portal => !portal.IsExit && !portal.IsDeadOrDeleted && portal.TeleportPosition != null)
+                .Select(portal => portal.TeleportPosition.ZoneId)
+                .Where(zoneId => zoneId != 0)
+                .Distinct()
+                .Order()
+                .ToArray();
+        }
+    }
+
     public List<Portal> GetRecallBySubZoneId(uint subZoneId)
     {
         return _recalls != null && _recalls.TryGetValue(subZoneId, out var recall)
@@ -120,7 +140,7 @@ public class PortalManager(ILocalizationManager localizationManager, IWorldManag
     }
 
     /// <summary>
-    /// GetDistrictReturnPoint - вернуть точку возврата для соответствующего DistrictId
+    /// GetDistrictReturnPoint: return the return point for the specified DistrictId.
     /// </summary>
     /// <param name="districtId"></param>
     /// <returns>ReturnPointId</returns>
@@ -133,7 +153,7 @@ public class PortalManager(ILocalizationManager localizationManager, IWorldManag
     }
 
     /// <summary>
-    /// GetDistrictReturnPoint - вернуть точку возврата для соответствующего DistrictId и FactionId, так как точки для фракций могут быть разные
+    /// GetDistrictReturnPoint: return the point for the specified DistrictId and FactionId, since each faction may have a different point.
     /// </summary>
     /// <param name="districtId"></param>
     /// <param name="factionId"></param>
@@ -688,7 +708,8 @@ public class PortalManager(ILocalizationManager localizationManager, IWorldManag
 
         character.SendPacket(new SCUnitPortalUsedPacket(portal.ObjId));
 
-        var destWorld = portal.LinkedPortal?.ParentWorld ?? portal.ParentWorld ?? character.ParentWorld;
+        var sourceWorld = character.ParentWorld;
+        var destWorld = portal.LinkedPortal?.ParentWorld ?? portal.ParentWorld ?? sourceWorld;
         if (!SkillTeleportLanding.TryApplyToWorld(
                 character,
                 destWorld,
@@ -701,7 +722,22 @@ public class PortalManager(ILocalizationManager localizationManager, IWorldManag
         {
             Logger.Warn("UsePortal: {0} could not land at portal {1} zone {2}",
                 character.Name, portal.Name, destination.ZoneId);
+            return;
         }
+
+        // Dungeon entry has its own mate cleanup while it moves the player into the instance.
+        // Ordinary portal landings keep active mates and bring them to the same destination.
+        if (destWorld?.DungeonInstance != null)
+            return;
+
+        var landedPosition = character.Transform.World.Position;
+        sourceWorld?.MateManager?.MoveActiveMatesWithOwner(
+            character,
+            destWorld,
+            landedPosition.X,
+            landedPosition.Y,
+            landedPosition.Z,
+            destination.World.Rotation.Z);
     }
 
     public void DeletePortal(Character owner, byte type, uint id)

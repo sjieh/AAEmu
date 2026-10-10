@@ -53,19 +53,19 @@ public class TransferSpawner : Spawner<Transfer>
             return null;
         }
 
-        // использование путей из клиента для отдельного потока движения
-        // исключаем прицепы
+        // Use the route data from the client for a separate movement task.
+        // Skip trailers.
         if (transfer.TemplateId != 46 && transfer.TemplateId != 4 && transfer.TemplateId != 122 && transfer.TemplateId != 135 && transfer.TemplateId != 137)
         {
             if (!transfer.IsInPatrol)
             {
-                // организуем последовательность участков дороги для следования "Транспорта"
+                // Arrange the road segments in the order the transport will follow them.
                 for (var i = 0; i < transfer.Template.TransferRoads.Count; i++)
                 {
                     transfer.Routes.TryAdd(i, transfer.Template.TransferRoads[i].Pos);
                 }
 
-                transfer.TransferPath = transfer.Routes.Count > 0 ? transfer.Routes[0] : null;// начнем с самого начала
+                transfer.TransferPath = transfer.Routes.Count > 0 ? transfer.Routes[0] : null; // Start at the beginning.
 
                 if (transfer.TransferPath != null && transfer.TransferPath.Count >= 2)
                 {
@@ -76,7 +76,7 @@ public class TransferSpawner : Spawner<Transfer>
                     transfer.Steering = 0;
                     transfer.PathPointIndex = 0;
 
-                    // попробуем заспавнить в первой точке пути и попробуем смотреть на следующую точку
+                    // Try spawning at the first route point and face toward the next point.
                     var point = transfer.TransferPath[0];
                     var point2 = transfer.TransferPath[1];
 

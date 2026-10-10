@@ -4,7 +4,7 @@ using AAEmu.Game.Models.Game.DoodadObj;
 
 namespace AAEmu.Game.Core.Packets.G2C;
 
-public class SCDoodadCreatedPacket(Doodad doodad, uint funcGroupId) : GamePacket(SCOffsets.SCDoodadCreatedPacket, 1)
+public class SCDoodadCreatedPacket(Doodad doodad, uint funcGroupId, uint? questGlow = null) : GamePacket(SCOffsets.SCDoodadCreatedPacket, 1)
 {
     public SCDoodadCreatedPacket(Doodad doodad)
         : this(doodad, doodad.FuncGroupId)
@@ -13,6 +13,6 @@ public class SCDoodadCreatedPacket(Doodad doodad, uint funcGroupId) : GamePacket
 
     public override PacketStream Write(PacketStream stream)
     {
-        return doodad.Write(stream, funcGroupId);
+        return doodad.Write(stream, funcGroupId, questGlow);
     }
 }

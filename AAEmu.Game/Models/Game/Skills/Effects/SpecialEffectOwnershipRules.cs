@@ -170,9 +170,8 @@ public static class SpecialEffectOwnershipRules
         [SpecialType.Projectile] = SpecialEffectOwnership.ClientVisual, // 37: 4990 rows, 4968 on plots
         [SpecialType.ProjectileAnim] = SpecialEffectOwnership.ClientVisual, // 38: 550 rows, all on plots
         [SpecialType.OpacityControl] = SpecialEffectOwnership.ClientVisual, // 42: 121 rows, 73 skills; every viewer replays the fired skill
-        // 48 combo: 149 rows, 146 skills. value1 names the next hold-hit and value2 its window; the
-        // client starts that skill as an ordinary cast, which World validates like any other. Whether
-        // World must also gate the follow-up window is an open question (SKILL_TASKS E8).
+        // 48 combo: 149 rows, 146 skills. The client owns the animation and prompt; World records
+        // value1's next skill for value2 milliseconds so the learned-skill gate can allow that follow-up.
         [SpecialType.Combo] = SpecialEffectOwnership.ClientVisual,
         // 76/77/78: the fishing line. 76 sits on the fail and hook events of fishing plots (52 rows,
         // 30 plots), 77 on their success and box events (19 rows, 15 plots) and 78 adds fx to it. The

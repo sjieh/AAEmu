@@ -63,7 +63,7 @@ public class NpcSpawnerSpawnEffect : EffectTemplate
                 if (npc == null)
                     continue;
 
-                npc.Spawner.RespawnTime = 0; // запретим респавн
+                npc.Spawner.RespawnTime = 0; // Disable respawning.
                 Logger.Info($"NpcSpawnerSpawnEffect: Do Spawn effect id={Id}, Npc unitId={spawner.UnitId} spawnerId={SpawnerId} worldId={caster.Transform.WorldId}");
 
                 // use_summoner_faction (356 rows): the spawn answers to the summoner's side. It is applied

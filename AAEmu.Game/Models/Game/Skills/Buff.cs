@@ -58,7 +58,7 @@ public class Buff
     public SavedPosition? SavedPosition { get; set; }
 
     /// <summary>
-    /// How many applications of a multiple-stack family this single instance represents.
+    /// How many applications of a stackable family this single instance represents.
     /// </summary>
     /// <remarks>
     /// One instance carries the whole stack because the client draws an icon per instance and reads the
@@ -477,6 +477,7 @@ public class Buff
 
     public void OverwriteWith(Buff newBuff)
     {
+        var grewStack = false;
         lock (_lock)
         {
             var remaining = GetTimeLeft();
@@ -503,7 +504,17 @@ public class Buff
                 // Extend: new Duration = remaining time (from old timer) + newBuff.Duration. GetTimeLeft()
                 // answers -1 for a permanent instance, so the sum goes through the rule, which floors that
                 // sentinel at zero instead of shaving a millisecond off the incoming duration.
-                Duration = BuffStackRules.ExtendedDuration(newBuff.Duration, remaining);
+                Duration = BuffLifetimeRules.ClampedDuration(
+                    BuffStackRules.ExtendedDuration(newBuff.Duration, remaining),
+                    Template.MaxLifeTime);
+
+                // Extend families can carry a real application count as well. Keep extending duration
+                // at the stack ceiling, but cap the effect and client stack value at max_stack.
+                if (BuffStackRules.CanGrow(Stack, Template.MaxStack))
+                {
+                    Stack++;
+                    grewStack = true;
+                }
             }
             else
             {
@@ -531,6 +542,10 @@ public class Buff
                 SetInUse(true, true);
             }
         }
+
+        // Rebuild stack-scaled modifiers after the updated duration and stack are committed.
+        if (grewStack && InUse)
+            Template.Start(Caster, Owner, this);
 
         NotifyUpdated(reason: 1); // refresh/overwrite
     }

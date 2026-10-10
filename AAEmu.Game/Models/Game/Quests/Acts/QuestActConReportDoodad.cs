@@ -1,4 +1,5 @@
-﻿using AAEmu.Game.Models.Game.Quests.Static;
+﻿using AAEmu.Game.Core.Managers.UnitManagers;
+using AAEmu.Game.Models.Game.Quests.Static;
 using AAEmu.Game.Models.Game.Quests.Templates;
 using AAEmu.Game.Models.Game.Units;
 
@@ -37,7 +38,21 @@ public class QuestActConReportDoodad(QuestComponentTemplate parentComponent) : Q
 
     public override void OnReportDoodad(QuestAct questAct, object sender, OnReportDoodadArgs args)
     {
-        if (questAct.Id != ActId || args.DoodadId != DoodadId)
+        if (questAct.Id != ActId)
+            return;
+
+        var quest = questAct.QuestComponent.Parent.Parent;
+        var matchesDoodad = args.DoodadId == DoodadId;
+        var matchedByAlias = false;
+        if (!matchesDoodad && UseAlias && QuestActObjAliasId != 0 && args.QuestId == quest.TemplateId)
+        {
+            // Alias-backed report rows can reference a different id than the concrete world
+            // doodad. Accept that fallback only when the doodad offers this exact quest.
+            matchedByAlias = DoodadManager.Instance.OffersQuest(args.DoodadId, quest.TemplateId);
+            matchesDoodad = matchedByAlias;
+        }
+
+        if (!matchesDoodad)
             return;
 
         // This check is needed so that turning in a quest at a Doodad doesn't complete all active quests that
@@ -45,12 +60,11 @@ public class QuestActConReportDoodad(QuestComponentTemplate parentComponent) : Q
         var minimumProgress = questAct.Template.ParentComponent.ParentQuestTemplate.LetItDone
             ? QuestObjectiveStatus.CanEarlyComplete
             : QuestObjectiveStatus.QuestComplete;
-        var quest = questAct.QuestComponent.Parent.Parent;
         var isReady = quest.GetQuestObjectiveStatus() >= minimumProgress;
         // TODO: Check doodad range?
 
         Logger.Debug(
-            $"QuestActConReportDoodad({DetailId}).OnReportDoodad: Quest: {quest.TemplateId}, Owner {quest.Owner.Name} ({quest.Owner.Id}), DoodadId {args.DoodadId}, Selected {args.Selected}, isReady {isReady}");
+            $"QuestActConReportDoodad({DetailId}).OnReportDoodad: Quest: {quest.TemplateId}, Owner {quest.Owner.Name} ({quest.Owner.Id}), DoodadId {args.DoodadId}, ExpectedDoodadId {DoodadId}, AliasId {QuestActObjAliasId}, MatchedByAlias {matchedByAlias}, Selected {args.Selected}, isReady {isReady}");
 
         if (!isReady)
             return;

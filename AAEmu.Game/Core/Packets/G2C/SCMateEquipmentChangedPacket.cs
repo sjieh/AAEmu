@@ -15,13 +15,13 @@ public class SCMateEquipmentChangedPacket : GamePacket
     private readonly bool _bts;
     private readonly byte _num;
     private readonly bool _success;
-    private readonly ItemAndLocation _itemOnPet;
-    private readonly ItemAndLocation _itemInBag;
+    private readonly ItemAndLocation _first;
+    private readonly ItemAndLocation _second;
     private readonly DateTime _expireTime;
 
     public SCMateEquipmentChangedPacket(
-        ItemAndLocation itemOnPet,
-        ItemAndLocation itemInBag,
+        ItemAndLocation first,
+        ItemAndLocation second,
         ushort mateTlId,
         uint characterId,
         uint passengerId,
@@ -30,8 +30,8 @@ public class SCMateEquipmentChangedPacket : GamePacket
         DateTime expireTime = default)
         : base(SCOffsets.SCMateEquipmentChangedPacket, 1)
     {
-        _itemOnPet = itemOnPet;
-        _itemInBag = itemInBag;
+        _first = first;
+        _second = second;
         _mateTlId = mateTlId;
         _characterId = characterId;
         _passengerId = passengerId;
@@ -49,20 +49,20 @@ public class SCMateEquipmentChangedPacket : GamePacket
         stream.Write(_bts);
         stream.Write(_num);
 
-        if (_itemOnPet.Item == null)
+        if (_first.Item == null)
             stream.Write(0u);
         else
-            stream.Write(_itemOnPet.Item);
+            stream.Write(_first.Item);
 
-        if (_itemInBag.Item == null)
+        if (_second.Item == null)
             stream.Write(0u);
         else
-            stream.Write(_itemInBag.Item);
+            stream.Write(_second.Item);
 
-        stream.Write((byte)_itemOnPet.SlotType);
-        stream.Write(_itemOnPet.SlotNumber);
-        stream.Write((byte)_itemInBag.SlotType);
-        stream.Write(_itemInBag.SlotNumber);
+        stream.Write((byte)_first.SlotType);
+        stream.Write(_first.SlotNumber);
+        stream.Write((byte)_second.SlotType);
+        stream.Write(_second.SlotNumber);
         stream.Write(_expireTime);
         stream.Write(_success);
 

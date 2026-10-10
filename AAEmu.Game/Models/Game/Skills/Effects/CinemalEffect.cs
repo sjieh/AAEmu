@@ -23,6 +23,9 @@ public class CinemalEffect : EffectTemplate
         // cutscene to play from its own copy of the skill's effects, so the server's part is to record which
         // one is running — CSStartedCinema and CSCompletedCinema both read CurrentlyPlayingCinemaId back out
         // when they raise their events, and without this they only ever saw zero.
-        character.CurrentlyPlayingCinemaId = CinemaId;
+        if (CinemaId != 0)
+            character.Quests.BindPlayingCinema(CinemaId);
+        else
+            character.CurrentlyPlayingCinemaId = 0;
     }
 }

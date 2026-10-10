@@ -177,7 +177,7 @@ public class DuelManager : Singleton<DuelManager>, IDuelManager
     public void DuelAccepted(Character challenged, uint challengerId)
     {
         ArgumentNullException.ThrowIfNull(challenged);
-        // приходит ID того, кто вызвал на дуэль
+        // This is the ID of the player who issued the duel challenge.
         try
         {
             // The invitation can have expired while the popup sat on screen, so accepting one we no
@@ -323,10 +323,10 @@ public class DuelManager : Singleton<DuelManager>, IDuelManager
             duel.DuelEndTimerTask = new DuelEndTimerTask(duel, duel.Challenger.Id);
             TaskManager.Instance.Schedule(duel.DuelEndTimerTask, TimeSpan.FromMinutes(DuelDurationTime));
 
-            // запустим проверку на дистанцию
+            // Start checking the distance.
             _ = DuelDistanceСheck(duel.Challenger.Id);
 
-            // запустим проверку на количество жизни
+            // Start checking the players' health.
             _ = DuelResultСheck(duel.Challenger.Id);
         }
         catch (Exception e)
@@ -533,29 +533,29 @@ public class DuelManager : Singleton<DuelManager>, IDuelManager
         try
         {
             var duel = _duels[id];
-            // проверяем, сбежали от флага или нет
+            // Check whether either player has moved too far from the flag.
             var currentDistance = MathUtil.CalculateDistance(duel.DuelFlag.Transform.World.Position, duel.Challenger.Transform.World.Position, true);
             if (currentDistance >= DistanceForSurrender)
             {
-                // отключаем таймер
+                // Stop the timer.
                 if (duel.DuelDistanceСheckTask == null)
-                    return DuelDistance.ChallengerFar; // сдается тот, кто вызывал на дуэль, т.е. убежал от флага
+                    return DuelDistance.ChallengerFar; // The challenger forfeits by moving too far from the flag.
 
                 _ = duel.DuelDistanceСheckTask.Cancel();
                 duel.DuelDistanceСheckTask = null;
-                return DuelDistance.ChallengerFar; // сдается тот, кто вызывал на дуэль, т.е. убежал от флага
+                return DuelDistance.ChallengerFar; // The challenger forfeits by moving too far from the flag.
             }
-            // проверяем, сбежали от флага или нет
+            // Check whether either player has moved too far from the flag.
             currentDistance = MathUtil.CalculateDistance(duel.DuelFlag.Transform.World.Position, duel.Challenged.Transform.World.Position, true);
             if (currentDistance >= DistanceForSurrender)
             {
-                // отключаем таймер
+                // Stop the timer.
                 if (duel.DuelDistanceСheckTask == null)
-                    return DuelDistance.ChallengedFar; // сдается тот, кого вызвали на дуэль, т.е. убежал от флага
+                    return DuelDistance.ChallengedFar; // The challenged player forfeits by moving too far from the flag.
 
                 _ = duel.DuelDistanceСheckTask.Cancel();
                 duel.DuelDistanceСheckTask = null;
-                return DuelDistance.ChallengedFar; // сдается тот, кого вызвали на дуэль, т.е. убежал от флага
+                return DuelDistance.ChallengedFar; // The challenged player forfeits by moving too far from the flag.
             }
 
             duel.DuelDistanceСheckTask = new DuelDistanceСheckTask(duel);
@@ -565,8 +565,8 @@ public class DuelManager : Singleton<DuelManager>, IDuelManager
         {
             // id is missing in the database
             Logger.Warn($"DistanceСheck: Id={id} not found in duels[], error code: {e}");
-            return DuelDistance.Error;  // рядом с флагом
+            return DuelDistance.Error;  // Near the flag.
         }
-        return DuelDistance.Near;  // рядом с флагом
+        return DuelDistance.Near;  // Near the flag.
     }
 }

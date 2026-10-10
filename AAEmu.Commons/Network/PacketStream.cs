@@ -858,7 +858,7 @@ public class PacketStream : ICloneable, IComparable
         catch (Exception ex)
         {
             Logger.Error(ex, "Error reading DateTime.");
-            return DateTime.MinValue; // Возвращаем значение по умолчанию
+            return DateTime.MinValue; // Return the default value.
         }
     }
 
@@ -909,7 +909,7 @@ public class PacketStream : ICloneable, IComparable
         catch (Exception ex)
         {
             Logger.Error(ex, "Error reading position.");
-            return (0, 0, 0); // Возвращаем значение по умолчанию
+            return (0, 0, 0); // Return the default value.
         }
     }
 
@@ -946,7 +946,7 @@ public class PacketStream : ICloneable, IComparable
         catch (Exception ex)
         {
             Logger.Error(ex, "Error reading quaternion.");
-            return Quaternion.Identity; // Возвращаем значение по умолчанию
+            return Quaternion.Identity; // Return the default value.
         }
     }
 
@@ -974,7 +974,7 @@ public class PacketStream : ICloneable, IComparable
         catch (Exception ex)
         {
             Logger.Error(ex, "Error reading Vector3.");
-            return Vector3.Zero; // Возвращаем значение по умолчанию
+            return Vector3.Zero; // Return the default value.
         }
     }
 
@@ -1003,7 +1003,7 @@ public class PacketStream : ICloneable, IComparable
         catch (Exception ex)
         {
             Logger.Error(ex, "Error reading Vector3.");
-            return Vector3.Zero; // Возвращаем значение по умолчанию
+            return Vector3.Zero; // Return the default value.
         }
     }
 
@@ -1033,7 +1033,7 @@ public class PacketStream : ICloneable, IComparable
         catch (Exception ex)
         {
             Logger.Error(ex, "Error reading string.");
-            return string.Empty; // Возвращаем значение по умолчанию
+            return string.Empty; // Return the default value.
         }
     }
 
@@ -1059,7 +1059,7 @@ public class PacketStream : ICloneable, IComparable
         catch (Exception ex)
         {
             Logger.Error(ex, "Error reading string.");
-            return string.Empty; // Возвращаем значение по умолчанию
+            return string.Empty; // Return the default value.
         }
     }
 
@@ -1583,7 +1583,7 @@ public class PacketStream : ICloneable, IComparable
         if (!(obj is PacketStream stream))
         {
             Logger.Error("Object is not a PacketStream instance");
-            return 1; // Возвращаем значение по умолчанию
+            return 1; // Return the default value.
         }
         var count = Math.Min(Count, stream.Count);
         for (var i = 0; i < count; i++)

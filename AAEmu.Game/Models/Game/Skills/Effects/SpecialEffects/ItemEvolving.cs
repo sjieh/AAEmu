@@ -116,7 +116,8 @@ public class ItemEvolving : SpecialEffectAction
 
         // Only the experience the ladder can still absorb is paid for, and only the infusions that
         // still buy room are taken. A later slot that would be pure overflow stays in the bag.
-        var room = ItemEnchantGameData.Instance.GetExpToMaxGrade(categoryId, equipItem.Grade, equipItem.EvolvingExp);
+        var room = ItemEnchantGameData.Instance.GetExpToMaxGrade(categoryId, equipItem.Grade,
+            equipItem.EvolvingExp);
         var offeredEach = offers.ConvertAll(o => o.Offered);
         if (!ItemEvolvingRules.TryTakeFeed(offeredEach, room, out var purchased, out var takeCount))
         {
@@ -303,33 +304,15 @@ public class ItemEvolving : SpecialEffectAction
 
         while (true)
         {
-            var next = NextGrade(equipItem.Grade);
-            if (next == null)
+            if (!ItemEnchantGameData.Instance.TryGetNextGradeCost(categoryId, equipItem.Grade,
+                    out var nextGrade, out var needed))
                 break;
-
-            // A rung is priced by the grade it leads into, not by the one it leaves. A grade the pool
-            // never priced is a grade the pool does not offer, and that is where its ladder ends -
-            // which is how one pool stops at Celestial and the next carries on to Eternal.
-            var needed = ItemEnchantGameData.Instance.GetGradeExp(categoryId, next.Value);
-            if (needed == 0)
-            {
-                // Unless the pool's own ceiling reaches past its priced rungs, which is how the
-                // story-quest sets are built: their last step carries no price of its own and is
-                // paid for by filling the grade below it. That is the jump those pieces make from a
-                // full bar, and it is the only way an unpriced rung can be entered.
-                if (!AllowsFreeStep(category, next.Value))
-                    break;
-
-                needed = ItemEnchantGameData.Instance.GetGradeExp(categoryId, equipItem.Grade);
-                if (needed == 0)
-                    break;
-            }
 
             if (equipItem.EvolvingExp < needed)
                 break;
 
             equipItem.EvolvingExp -= needed;
-            equipItem.Grade = next.Value;
+            equipItem.Grade = nextGrade;
 
             if (equipItem.EvolveChance < MaxChangeAttempts)
                 equipItem.EvolveChance++;
@@ -337,10 +320,8 @@ public class ItemEvolving : SpecialEffectAction
             added.AddRange(TopUpAttributes(equipItem, categoryId));
         }
 
-        var beyond = NextGrade(equipItem.Grade);
-        var atTop = beyond == null ||
-                    (ItemEnchantGameData.Instance.GetGradeExp(categoryId, beyond.Value) == 0 &&
-                     !AllowsFreeStep(category, beyond.Value));
+        var atTop = !ItemEnchantGameData.Instance.TryGetNextGradeCost(categoryId, equipItem.Grade,
+            out _, out _);
 
         if (atTop)
         {
@@ -357,38 +338,6 @@ public class ItemEvolving : SpecialEffectAction
         }
 
         return added;
-    }
-
-    /// <summary>
-    /// Whether a pool may enter a grade it never priced, on the strength of its own ceiling.
-    /// </summary>
-    /// <remarks>
-    /// Most pools price every grade they offer and their ceiling sits at or below the last of them.
-    /// The story-quest sets are the other way round - the ceiling names one grade more than the
-    /// ladder prices - and that spare grade is the step those pieces take once the grade below it is
-    /// full.
-    /// </remarks>
-    private static bool AllowsFreeStep(ItemRndAttrCategory category, byte grade)
-    {
-        return category != null && category.MaxEvolvingGrade >= 0 && grade <= category.MaxEvolvingGrade;
-    }
-
-    /// <summary>
-    /// The grade one step up, in the order the client lists them, or null at the end of the list.
-    /// </summary>
-    /// <remarks>
-    /// Not simply the next id. Crude is id 1 but sits below Basic at id 0, so counting ids upward
-    /// walks an item at Basic backwards into Crude - which is why item_grades carries a running
-    /// order alongside the id.
-    /// </remarks>
-    private static byte? NextGrade(byte grade)
-    {
-        var current = ItemManager.Instance.GetGradeTemplate(grade);
-        if (current == null)
-            return null;
-
-        var next = ItemManager.Instance.GetGradeTemplateByOrder(current.GradeOrder + 1);
-        return next == null ? null : (byte)next.Grade;
     }
 
     /// <summary>

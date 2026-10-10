@@ -164,7 +164,7 @@ public partial class Npc
 
             if (skill.Template.CooldownTime == 0)
             {
-                npc.Cooldowns.AddCooldown(skill.Id, uint.MaxValue); // Run once / выполняем один раз
+                npc.Cooldowns.AddCooldown(skill.Id, uint.MaxValue); // Run once.
             }
 
             if (WorldIntegration.ZoneAuthority && npc.IsZoneMirror)
@@ -200,7 +200,7 @@ public partial class Npc
 
             if (skill.Template.CooldownTime == 0)
             {
-                npc.Cooldowns.AddCooldown(skill.Id, uint.MaxValue); // выполняем один раз
+                npc.Cooldowns.AddCooldown(skill.Id, uint.MaxValue); // Run once.
             }
 
             Logger.Trace($"Npc={npc.ObjId}:{npc.TemplateId} using skill={skill.Id}");
@@ -236,7 +236,7 @@ public partial class Npc
 
             if (skill.Template.CooldownTime == 0)
             {
-                npc.Cooldowns.AddCooldown(skill.Id, uint.MaxValue); // выполняем один раз
+                npc.Cooldowns.AddCooldown(skill.Id, uint.MaxValue); // Run once.
             }
 
             Logger.Trace($"Npc={npc.ObjId}:{npc.TemplateId} using skill={skill.Id}");
@@ -269,7 +269,7 @@ public partial class Npc
 
             if (skill.Template.CooldownTime == 0)
             {
-                npc.Cooldowns.AddCooldown(skill.Id, uint.MaxValue); // выполняем один раз
+                npc.Cooldowns.AddCooldown(skill.Id, uint.MaxValue); // Run once.
             }
 
             Logger.Trace($"Npc={npc.ObjId}:{npc.TemplateId} using skill={skill.Id}");
@@ -302,7 +302,7 @@ public partial class Npc
 
             if (skill.Template.CooldownTime == 0)
             {
-                npc.Cooldowns.AddCooldown(skill.Id, uint.MaxValue); // выполняем один раз
+                npc.Cooldowns.AddCooldown(skill.Id, uint.MaxValue); // Run once.
             }
 
             Logger.Trace($"Npc={npc.ObjId}:{npc.TemplateId} using skill={skill.Id}");
@@ -336,7 +336,7 @@ public partial class Npc
 
             if (skill.Template.CooldownTime == 0)
             {
-                npc.Cooldowns.AddCooldown(skill.Id, uint.MaxValue); // выполняем один раз
+                npc.Cooldowns.AddCooldown(skill.Id, uint.MaxValue); // Run once.
             }
 
             Logger.Trace($"Npc={npc.ObjId}:{npc.TemplateId} using skill={skill.Id}");
@@ -369,7 +369,7 @@ public partial class Npc
 
             if (skill.Template.CooldownTime == 0)
             {
-                npc.Cooldowns.AddCooldown(skill.Id, uint.MaxValue); // выполняем один раз
+                npc.Cooldowns.AddCooldown(skill.Id, uint.MaxValue); // Run once.
             }
 
             Logger.Trace($"Npc={npc.ObjId}:{npc.TemplateId} using skill={skill.Id}");

@@ -35,6 +35,7 @@ public enum BuffConstants : uint
     Juror = 3621, // 배심원 - serving on a jury
     EquipDualwield = 4899,
     ScoreMemorized = 6010,
+    EmotionAmplification = 30015, // Pleasure passive: doubles Happy/Sorrow effects at either endpoint.
     FlutePlay = 6176,
     LutePlay = 6177,
     DrumPlay = 8216, // this one is actually called Play Drums, but not really used

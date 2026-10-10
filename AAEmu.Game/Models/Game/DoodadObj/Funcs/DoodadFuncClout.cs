@@ -37,11 +37,11 @@ public class DoodadFuncClout : DoodadPhaseFuncTemplate
 
         if (UseOriginSource)
         {
-            // будем проверять на дистанции 4 м от персонажа
+            // Check for characters within 4 meters.
             var doodads = WorldManager.GetAround<Doodad>(caster, 4f);
             foreach (var d in doodads)
             {
-                areaTrigger.Owner = d; // нам главное, чтобы рядом был doodad от которого будет искаться на кого наложить бафф
+                areaTrigger.Owner = d; // The nearby doodad is used to find units that should receive the buff.
                 break;
             }
             areaTrigger.Owner ??= owner;

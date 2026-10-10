@@ -33,7 +33,7 @@ public class DoodadSaveSubCommand : SubCommandBase
 
     public override void Execute(ICharacter character, string triggerArgument, IDictionary<string, ParameterValue> parameters, IMessageOutput messageOutput)
     {
-        // Запускаем метод в отдельной задаче (нити)
+        // Run the method in a separate task (thread).
         Task.Run(() =>
         {
             try
@@ -45,7 +45,7 @@ public class DoodadSaveSubCommand : SubCommandBase
             }
             catch (Exception ex)
             {
-                // Обработка исключения, например, запись в лог
+                // Handle the exception, for example by writing it to the log.
                 Logger.Error($"Ошибка при выполнении метода: {ex.Message}");
             }
         });
@@ -96,7 +96,7 @@ public class DoodadSaveSubCommand : SubCommandBase
             allDoodads = null;
             GC.Collect();
 
-            // Удаление дубликатов из начальных данных
+            // Remove duplicates from the initial data.
             var doodadSpawnersDict = new Dictionary<(uint UnitId, float X, float Y, float Z), JsonDoodadSpawns>();
             var uniqueKeys = new HashSet<(uint, float, float, float)>();
             foreach (var spawns in doodadSpawnersToFile)
@@ -109,9 +109,9 @@ public class DoodadSaveSubCommand : SubCommandBase
                 }
                 doodadSpawnersDict.Add(key, spawns);
             }
-            doodadSpawnersToFile = doodadSpawnersDict.Values.ToList(); // Перезаписываем список уникальными значениями
+            doodadSpawnersToFile = doodadSpawnersDict.Values.ToList(); // Replace the list with its unique entries.
 
-            // Удаление элементов
+            // Remove entries.
             Parallel.For(0, removeDoodads.Count, i =>
             {
                 var doodad = removeDoodads[i];
@@ -126,7 +126,7 @@ public class DoodadSaveSubCommand : SubCommandBase
                 }
             });
 
-            // Добавление новых элементов с проверкой дубликатов
+            // Add new entries while checking for duplicates.
             Parallel.For(0, addDoodads.Count, i =>
             {
                 var doodad = addDoodads[i];
@@ -140,7 +140,7 @@ public class DoodadSaveSubCommand : SubCommandBase
 
                     var newDoodadSpawn = new JsonDoodadSpawns
                     {
-                        Id = Interlocked.Increment(ref lastObjId) - 1, // Потокобезопасное увеличение
+                        Id = Interlocked.Increment(ref lastObjId) - 1, // Thread-safe increment.
                         UnitId = doodad.TemplateId,
                         Title = DoodadManager.GetSpawnName(doodad.TemplateId),
                         Position = new JsonPosition
@@ -194,7 +194,7 @@ public class DoodadSaveSubCommand : SubCommandBase
 
     private void SaveAll(ICharacter character, IMessageOutput messageOutput)
     {
-        // Проверка на выполнение записи
+        // Check whether the write should proceed.
         if (_isSavingInProgress)
         {
             SendMessage(messageOutput, "Save operation is already in progress.");
@@ -224,49 +224,49 @@ public class DoodadSaveSubCommand : SubCommandBase
 
             for (var i = 0; i < doodadSpawnersToFile.Count; i++)
             {
-                doodadSpawnersToFile[i].Title = DoodadManager.GetSpawnName(doodadSpawnersToFile[i].UnitId); // обновим Title
+                doodadSpawnersToFile[i].Title = DoodadManager.GetSpawnName(doodadSpawnersToFile[i].UnitId); // Update the title.
                 if (doodadSpawnersToFile[i].Scale == 0f)
-                    doodadSpawnersToFile[i].Scale = 1f; // обновим Scale
+                    doodadSpawnersToFile[i].Scale = 1f; // Update the scale.
             }
 
             var addDoodads = doodadsInWorld.Where(n => n.Spawner?.Id == 0).ToList();
             var removeDoodads = doodadsInWorld.Where(n => n.Spawner?.Id == 0xffffffff).ToList();
 
-            // Получаем все doodads и последний идентификатор объекта
+            // Get all doodads and the last object ID.
             var allDoodads = ((Character)character).ParentWorld.GetAllDoodads();
             var lastObjId = allDoodads.Last().ObjId++;
 
-            // Освобождаем память, присваивая null
+            // Release memory by assigning null.
             doodadsInWorld = null;
             allDoodads = null;
-            GC.Collect(); // Вызываем сборку мусора
+            GC.Collect(); // Trigger garbage collection.
 
-            // Создаем словарь для быстрого поиска элементов в doodadSpawnersToFile
+            // Create a dictionary for quickly looking up entries in doodadSpawnersToFile.
             var doodadSpawnersDict = new Dictionary<(uint UnitId, float X, float Y, float Z), JsonDoodadSpawns>();
             var uniqueKeys = new HashSet<(uint, float, float, float)>();
 
             foreach (var spawns in doodadSpawnersToFile)
             {
-                // Формируем ключ для проверки
+                // Build the key used for the check.
                 var key = (spawns.UnitId,
                     spawns.Position.X,
                     spawns.Position.Y,
                     spawns.Position.Z);
 
-                // Проверяем уникальность ключа
+                // Check whether the key is unique.
                 if (!uniqueKeys.Add(key))
                 {
                     Logger.Warn($"Дубликат объекта с UnitId {spawns.UnitId} " + $"на позиции ({spawns.Position.X}, {spawns.Position.Y}, {spawns.Position.Z})");
                     continue;
                 }
 
-                // Если ключ уникален - добавляем в словарь
+                // Add the entry to the dictionary if its key is unique.
                 doodadSpawnersDict.Add(key, spawns);
             }
 
-            doodadSpawnersToFile = doodadSpawnersDict.Values.ToList(); // Перезаписываем список уникальными значениями
+            doodadSpawnersToFile = doodadSpawnersDict.Values.ToList(); // Replace the list with its unique entries.
             
-            // Удаляем элементы из doodadSpawnersToFile, которые соответствуют removeDoodads
+            // Remove entries from doodadSpawnersToFile that match removeDoodads.
             Parallel.For(0, removeDoodads.Count, i =>
             {
                 var doodad = removeDoodads[i];
@@ -279,7 +279,7 @@ public class DoodadSaveSubCommand : SubCommandBase
                 doodadSpawnersDict.Remove(key);
             });
 
-            // Добавляем элементы из addDoodads в doodadSpawnersToFile
+            // Add entries from addDoodads to doodadSpawnersToFile.
             Parallel.For(0, addDoodads.Count, i =>
             {
                 var doodad = addDoodads[i];
@@ -288,7 +288,7 @@ public class DoodadSaveSubCommand : SubCommandBase
                 {
                     Id = lastObjId++,
                     UnitId = doodad.TemplateId,
-                    Title = DoodadManager.GetSpawnName(doodad.TemplateId), // обновим Title
+                    Title = DoodadManager.GetSpawnName(doodad.TemplateId), // Update the title.
                     Position = new JsonPosition
                     {
                         X = pos.Position.X,
@@ -310,13 +310,13 @@ public class DoodadSaveSubCommand : SubCommandBase
 
             var jsonPathOut = Path.Combine(FileManager.AppPath, "Data", "Worlds", currentWorld.Template.Name, $"doodad_spawns_all_{DateTime.Now:yyyyMMdd_HHmmss}.json.add");
 
-            // Запись новых данных в файл
+            // Write the updated data to the file.
             var json = JsonConvert.SerializeObject(doodadSpawnersToFile, Formatting.Indented, new JsonModelsConverter());
             File.WriteAllText(jsonPathOut, json);
 
             stopwatch.Stop();
 
-            // Вывод информации о количестве записей
+            // Print the number of entries.
             var initialCount = doodadSpawnersFromFile.Count;
             var removedCount = removeDoodads.Count;
             var addedCount = addDoodads.Count;
@@ -365,7 +365,7 @@ public class DoodadSaveSubCommand : SubCommandBase
         {
             Id = doodad.Id,
             UnitId = doodad.TemplateId,
-            Title = DoodadManager.GetSpawnName(doodad.TemplateId), // обновим Title
+            Title = DoodadManager.GetSpawnName(doodad.TemplateId), // Update the title.
             Position = new JsonPosition
             {
                 X = doodad.Transform.Local.Position.X,

@@ -26,6 +26,7 @@ public class CSTeleportEndedPacket() : GamePacket(CSOffsets.CSTeleportEndedPacke
         me.DisabledSetPosition = false;
         if (!ReturnTeleportRules.ShouldApplyEndedPosition(x, y, z))
         {
+            me.ConsumePendingTeleportDoodadRefresh();
             Logger.Warn("TeleportEnded ignored origin for {0} zone={1}", me.Name, me.Transform.ZoneId);
             return;
         }
@@ -36,6 +37,12 @@ public class CSTeleportEndedPacket() : GamePacket(CSOffsets.CSTeleportEndedPacke
         Logger.Info("TeleportEnded applied {0} -> ({1:0.0},{2:0.0},{3:0.0}) zone={4}",
             me.Name, x, y, z, me.Transform.ZoneId);
 
-        WorldManager.ResendVisibleObjectsToCharacter(me, clientDroppedVisibility: false);
+        var refreshDoodads = me.ConsumePendingTeleportDoodadRefresh();
+        if (refreshDoodads)
+            Logger.Debug("Refreshing doodads after zone transition for {0} zone={1}", me.Name, me.Transform.ZoneId);
+        WorldManager.ResendVisibleObjectsToCharacter(
+            me,
+            clientDroppedVisibility: false,
+            forceDoodadRefresh: refreshDoodads);
     }
 }

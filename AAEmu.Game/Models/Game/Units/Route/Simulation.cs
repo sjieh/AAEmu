@@ -38,34 +38,34 @@ public class Simulation : Patrol
 
     public bool AbandonTo { get; set; } = false; // to interrupt repeat()
     public bool Cycle { get; set; } // for non-stop movement along the route
-    public bool Remove { get; set; } // удалить Npc в конце движения по маршруту
+    public bool Remove { get; set; } // Remove the NPC at the end of the route.
     public Vector3 TargetPosition { get; set; } // Target position
 
     // movement data
     public Dictionary<string, List<Vector3>> Paths { get; set; } // available routes for Npc movement
     public List<Vector3> Path { get; set; }       //  points for moving along the route
     public List<string> MovePath { get; set; }    //  points for moving along the route
-    public List<string> RecordPath { get; set; }  //  данные для записи пути
-    public int PointsCount { get; set; }          // кол-во поинтов в процессе записи пути
-    public bool SavePathEnabled { get; set; }     // флаг записи пути
-    public bool MoveToPathEnabled { get; set; }   // флаг движения по пути
-    public bool MoveToForward { get; set; }       // направление движения да - вперед, нет - назад
-    public bool RunningMode { get; set; }         // режим движения да - бежать, нет - идти
-    public int MoveStepIndex { get; set; }        // текущ. чекпоинт (куда бежим сейчас)
+    public List<string> RecordPath { get; set; }  // Path data being recorded.
+    public int PointsCount { get; set; }          // Number of points recorded so far.
+    public bool SavePathEnabled { get; set; }     // Whether path recording is enabled.
+    public bool MoveToPathEnabled { get; set; }   // Whether path following is enabled.
+    public bool MoveToForward { get; set; }       // Movement direction: forward when true, backward when false.
+    public bool RunningMode { get; set; }         // Movement mode: run when true, walk when false.
+    public int MoveStepIndex { get; set; }        // Current checkpoint index.
     private Vector3 OldPos { get; set; } = Vector3.Zero;
     //*******************************************************
-    private const string RecordFilesPath = @"./Data/Path/"; // путь где хранятся наши файлы
-    private const string RecordFileExt = @".path"; // расширение по умолчанию
-    private const string MoveFilesPath = @"./Data/Path/"; // путь где хранятся наши файлы
-    private const string MoveFileExt = @".path"; // расширение по умолчанию
-    public string MoveFileName { get; set; } = string.Empty; // имя файла для маршрута
-    public string MoveFileName2 { get; set; } = string.Empty; // имя файла для маршрута
+    private const string RecordFilesPath = @"./Data/Path/"; // Directory where recorded paths are stored.
+    private const string RecordFileExt = @".path"; // Default file extension.
+    private const string MoveFilesPath = @"./Data/Path/"; // Directory where route files are stored.
+    private const string MoveFileExt = @".path"; // Default file extension.
+    public string MoveFileName { get; set; } = string.Empty; // Route file name.
+    public string MoveFileName2 { get; set; } = string.Empty; // Secondary route file name.
 
     //Not used
     //private float MovingDistance = 0.25f; //0.3f;
 
-    private readonly float RangeToCheckPoint = 0.5f; // дистанция до чекпоинта при которой считается , что мы достигли оного
-    private readonly int MoveTrigerDelay = 1000;     // срабатывание таймера на движение  0,8 сек
+    private readonly float RangeToCheckPoint = 0.5f; // Distance within which a checkpoint is considered reached.
+    private readonly int MoveTrigerDelay = 1000;     // Movement timer interval (0.8 seconds).
 
     private uint SkillId { get; set; }
     private uint Timeout { get; set; }
@@ -96,13 +96,13 @@ public class Simulation : Patrol
         OnMove(npc);
     }
     //***************************************************************
-    //ПЕРЕМЕЩЕНИЕ:
-    //Идти в точку с координатами x,y,z
+    // MOVEMENT:
+    // Move to the point with coordinates x, y, z.
     //MOVETO(npc, x, y, z)
 
     //***************************************************************
     /// <summary>
-    /// Ориентация на местности: Проверка находится ли заданная точка в пределах досягаемости
+    /// World-space orientation: check whether the specified point is within reach.
     /// </summary>
     /// <param name="npc"></param>
     /// <param name="target"></param>
@@ -168,7 +168,7 @@ public class Simulation : Patrol
         {
             TargetPosition = pointsList[i];
 
-            //Logger.Warn($"Проверяем точку #{i} с координатами  x={TargetPosition.World.Position.X} y={TargetPosition.World.Position.Y}");
+            //Logger.Warn($"Checking point #{i} at x={TargetPosition.World.Position.X}, y={TargetPosition.World.Position.Y}");
 
             var m = MathUtil.CalculateDistance(TargetPosition, npc.Transform.World.Position, true);
             if (m <= 0) { continue; }
@@ -210,13 +210,13 @@ public class Simulation : Patrol
         RecordPath.Add(s);
         PointsCount++;
         //Logger.Warn($"added checkpoint #{PointsCount}");
-        //Character.SendMessage("[MoveTo] добавлен чекпоинт #" + PointsCount);
+        //Character.SendMessage("[MoveTo] Added checkpoint #" + PointsCount);
         RepeatTo(ch, MoveTrigerDelay, sim);
     }
     //***************************************************************
     public void StopRecord(Simulation sim)
     {
-        // записываем в файл
+        // Write the path to a file.
         using (var sw = new StreamWriter(GetRecordFileName()))
         {
             foreach (var b in RecordPath)
@@ -225,7 +225,7 @@ public class Simulation : Patrol
             }
         }
         //Logger.Warn("Route recording completed.");
-        //Character.SendMessage("[MoveTo] запись маршрута завершена.");
+        //Character.SendMessage("[MoveTo] Route recording completed.");
         SavePathEnabled = false;
     }
     //***************************************************************
@@ -250,8 +250,8 @@ public class Simulation : Patrol
         var s = "|" + TargetPosition.X + "|" + TargetPosition.Y + "|" + TargetPosition.Z + "|";
         RecordPath.Add(s);
         PointsCount++;
-        //Logger.Warn("добавлен чекпоинт # {0}", PointsCount);
-        //Character.SendMessage("[MoveTo] добавлен чекпоинт #" + PointsCount);
+        //Logger.Warn("Added checkpoint #{0}", PointsCount);
+        //Character.SendMessage("[MoveTo] Added checkpoint #" + PointsCount);
     }
     //***************************************************************
     public void GoToPath(Npc npc, bool toForward, uint skillId = 0, uint timeout = 0)
@@ -280,7 +280,7 @@ public class Simulation : Patrol
 
         if (Path.Count == 0)
         {
-            Logger.Warn($"Stop moving... Информация о пути MoveFileName={MoveFileName} отсутствует!");
+            Logger.Warn($"Stop moving... No route data found for MoveFileName={MoveFileName}!");
             return;
         }
 
@@ -324,7 +324,7 @@ public class Simulation : Patrol
 
         if (Path.Count == 0)
         {
-            Logger.Warn($"Stop moving... Информация о пути MoveFileName={MoveFileName} отсутствует!");
+            Logger.Warn($"Stop moving... No route data found for MoveFileName={MoveFileName}!");
             return;
         }
 
@@ -514,7 +514,7 @@ public class Simulation : Patrol
                 MoveToForward = false; // turn back
                 MoveStepIndex--;
                 //Logger.Warn($"walk to #{MoveStepIndex}");
-                //Character.SendMessage("[MoveTo] бежим к #" + MoveStepIndex);
+                //Character.SendMessage("[MoveTo] Running to #" + MoveStepIndex);
                 TargetPosition = Path[MoveStepIndex];
                 if (Cycle)
                 {
@@ -546,7 +546,7 @@ public class Simulation : Patrol
                     PauseMove(npc);
                     var time = Timeout * 1000;
 
-                    MoveFileName = MoveFileName2; // заменим на путь назад
+                    MoveFileName = MoveFileName2; // Switch to the return route.
                     GoToPath2(npc, true, 0, time);
                 }
                 else

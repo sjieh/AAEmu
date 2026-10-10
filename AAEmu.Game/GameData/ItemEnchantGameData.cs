@@ -1,4 +1,5 @@
 using AAEmu.Commons.Utils;
+using AAEmu.Game.Core.Managers;
 using AAEmu.Game.GameData.Framework;
 using AAEmu.Game.Models.Game.Items;
 using AAEmu.Game.Models.Game.Skills;
@@ -281,15 +282,50 @@ public class ItemEnchantGameData : Singleton<ItemEnchantGameData>, IGameDataLoad
     /// </summary>
     public uint GetExpToMaxGrade(uint categoryId, byte grade, uint sectionExp)
     {
-        var top = GetLadderTop(categoryId);
-        if (grade >= top)
-            return 0;
-
         var remaining = 0u;
-        for (var g = grade; g < top && g < byte.MaxValue; g++)
-            remaining += GetGradeExp(categoryId, (byte)g);
+        var currentGrade = grade;
+        for (var step = 0; step < 32; step++)
+        {
+            if (!TryGetNextGradeCost(categoryId, currentGrade, out var nextGrade, out var needed))
+                break;
+
+            remaining += needed;
+            currentGrade = nextGrade;
+        }
 
         return remaining > sectionExp ? remaining - sectionExp : 0;
+    }
+
+    /// <summary>
+    /// Gets the cost of the next synthesis grade using the same priced and free-step rules as the
+    /// synthesis action. Returns false when the pool's ladder ends at the current grade.
+    /// </summary>
+    public bool TryGetNextGradeCost(uint categoryId, byte grade, out byte nextGrade, out uint needed)
+    {
+        nextGrade = 0;
+        needed = 0;
+
+        var current = ItemManager.Instance.GetGradeTemplate(grade);
+        if (current == null)
+            return false;
+
+        var next = ItemManager.Instance.GetGradeTemplateByOrder(current.GradeOrder + 1);
+        if (next == null)
+            return false;
+
+        nextGrade = (byte)next.Grade;
+        needed = GetGradeExp(categoryId, nextGrade);
+        if (needed > 0)
+            return true;
+
+        // Some pools leave the destination grade unpriced and allow that final step through
+        // max_evolving_grade. The step consumes the current grade's remaining experience cost.
+        var category = GetRndAttrCategory(categoryId);
+        if (category == null || category.MaxEvolvingGrade < 0 || nextGrade > category.MaxEvolvingGrade)
+            return false;
+
+        needed = GetGradeExp(categoryId, grade);
+        return needed > 0;
     }
 
     /// <returns>

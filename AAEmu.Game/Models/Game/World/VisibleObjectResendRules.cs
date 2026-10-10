@@ -14,6 +14,6 @@ public static class VisibleObjectResendRules
         return !alreadyStreamed;
     }
 
-    public static bool ShouldResendDoodadCreates(bool clientDroppedVisibility) =>
-        clientDroppedVisibility;
+    public static bool ShouldResendDoodadCreates(bool clientDroppedVisibility, bool forceDoodadRefresh = false) =>
+        clientDroppedVisibility || forceDoodadRefresh;
 }

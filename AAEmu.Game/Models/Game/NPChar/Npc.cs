@@ -1206,7 +1206,7 @@ public partial class Npc : Unit
 
                 AwardNpcHonor(pl);
                 // character.Quests.OnKill(this);
-                // инициируем событие
+                // Raise the event.
                 // Task.Run(() => QuestManager.Instance.DoOnMonsterHuntEvents(character, this));
                 QuestManager.Instance.DoOnMonsterHuntEvents(pl, this);
             }

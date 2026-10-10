@@ -223,6 +223,15 @@ public class UnitReqs
                     target is Doodad targetDoodad && targetDoodad.TemplateId == Value1);
 
             case UnitReqsKindType.EquipRanged:
+            {
+                // value1 names the weapon the caster has to be holding: 0 = bow (holdable 19),
+                // 1 = musical instrument (the string / percussion / tube holdables 21-23, all of
+                // which carry slot type 21 = Instrument), 2 = shotgun (holdable 31). The 10.0.2
+                // content has 208 enabled rows of this kind, every one of them owner_type 'Skill':
+                // value1 0 sits on the bow skills (활쏘기, 화살 소나기, 저격), 1 on the bard ones
+                // (악기 연주, 치유의 돌림노래, 나팔소리, 추격), 2 on the gun variants of the bow
+                // skills. A skill name appears under both 0 and 2 (14835 연속 쏘기) because those
+                // rows sit on skills.or_unit_reqs, which is how one skill covers bow or shotgun.
                 if (Value1 is not (0 or 1 or 2))
                     return Ret(SkillResultKeys.skill_urk_equip_ranged, false);
 
@@ -232,56 +241,35 @@ public class UnitReqs
                         0,
                         Value1 == 2 ? 3u : Value1);
 
+                var equippedHoldable = unit.Equipment?.GetItemBySlot(
+                    (int)(Value1 == 1 ? EquipmentItemSlot.Musical : EquipmentItemSlot.Ranged))?.Template
+                    is WeaponTemplate equippedWeapon
+                    ? equippedWeapon.HoldableTemplate
+                    : null;
+
                 if (Value1 == 1)
                 {
-                    var instrument = unit.Equipment.GetItemBySlot((int)EquipmentItemSlot.Musical);
-                    var isCombatInstrument = instrument?.Template is WeaponTemplate
-                    {
-                        HoldableTemplate.SlotTypeId: (uint)EquipmentItemSlotType.Instrument
-                    };
-                    if (!isCombatInstrument)
-                        return new UnitReqsValidationResult(
-                            SkillResultKeys.skill_urk_equip_ranged,
-                            0,
-                            1);
-
-                    if (ItemManager.Instance.HasItemInstrumentSound(instrument.TemplateId))
-                        return new UnitReqsValidationResult(
-                            SkillResultKeys.skill_urk_equip_ranged,
-                            0,
-                            2);
-
+                    // Any instrument will do. instrument_sounds is NOT a "performance-only"
+                    // marker: 141 of the 283 string instruments and 112 of the 220 tube ones carry
+                    // a sound row, the bard's own starting instruments among them (6177 첫걸음
+                    // 현악기, 6202 첫걸음 관악기). Refusing an equipped instrument that has a
+                    // sound row therefore refused every real bard instrument - which is what
+                    // blocked the bard skills while the client happily showed them as usable.
+                    var instrumentHeld = equippedHoldable?.SlotTypeId == (uint)EquipmentItemSlotType.Instrument;
                     var musicalSlotDisabled = unit.Buffs.HasEffectsMatchingCondition(
                         effect => effect.Template.DisarmamentMusical);
-                    if (musicalSlotDisabled)
-                        return new UnitReqsValidationResult(
-                            SkillResultKeys.skill_urk_equip_ranged,
-                            0,
-                            1);
-
-                    return Ret(SkillResultKeys.ok, true);
+                    return RetWithValue(SkillResultKeys.skill_urk_equip_ranged, 1,
+                        instrumentHeld && !musicalSlotDisabled);
                 }
 
-                if (Value1 is 0 or 2)
-                {
-                    var requiredHoldableName = Value1 == 0 ? "bow" : "shot_gun";
-                    var requiredHoldableId = ItemManager.Instance.GetConstHoldableId(requiredHoldableName);
-                    var rangedWeapon = unit.Equipment.GetItemBySlot((int)EquipmentItemSlot.Ranged);
-                    var hasRequiredRangedWeapon = requiredHoldableId != 0 &&
-                                                  rangedWeapon?.Template is WeaponTemplate rangedTemplate &&
-                                                  rangedTemplate.HoldableTemplate.Id == requiredHoldableId;
-                    var rangedSlotDisabled = unit.Buffs.HasEffectsMatchingCondition(
-                        effect => effect.Template.DisarmamentRanged);
-                    if (hasRequiredRangedWeapon && !rangedSlotDisabled)
-                        return Ret(SkillResultKeys.ok, true);
-
-                    return new UnitReqsValidationResult(
-                        SkillResultKeys.skill_urk_equip_ranged,
-                        0,
-                        Value1 == 0 ? 0u : 3u);
-                }
-
-                return Ret(SkillResultKeys.ok, true);
+                // Both ranged values read the same slot; only the holdable differs.
+                var requiredHoldableId = ItemManager.Instance.GetConstHoldableId(Value1 == 0 ? "bow" : "shot_gun");
+                var hasRequiredRangedWeapon = requiredHoldableId != 0 && equippedHoldable?.Id == requiredHoldableId;
+                var rangedSlotDisabled = unit.Buffs.HasEffectsMatchingCondition(
+                    effect => effect.Template.DisarmamentRanged);
+                return RetWithValue(SkillResultKeys.skill_urk_equip_ranged, Value1 == 0 ? 0u : 3u,
+                    hasRequiredRangedWeapon && !rangedSlotDisabled);
+            }
 
             case UnitReqsKindType.NoBuffTag:
                 return Ret(SkillResultKeys.skill_urk_no_buff_tag, !unit?.Buffs.CheckBuffTag(Value1) ?? false);

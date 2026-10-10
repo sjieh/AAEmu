@@ -5,9 +5,8 @@ using AAEmu.Game.Models.Game.Units;
 namespace AAEmu.Game.Models.Game.Skills.Effects.SpecialEffects;
 
 /// <summary>
-/// Charges the caster mana for a skill that carries its cost in the effect instead of in
-/// <c>skills.mana_cost</c>. The formula is unconfirmed — see <see cref="ManaCostRules"/> — and no shipped row
-/// reaches this class.
+/// Charges the caster the mana amount carried by this plot effect. The plot decides when the cost applies
+/// and may select a different amount for different targets. See <see cref="ManaCostRules"/> for the formula.
 /// </summary>
 public class ManaCost : SpecialEffectAction
 {
@@ -29,9 +28,7 @@ public class ManaCost : SpecialEffectAction
         if (caster is not Character character)
             return;
 
-        var manaCost = character.SkillModifiersCache.ApplyModifiers(
-            skill, SkillAttribute.ManaCost, ManaCostRules.Compute(value1, value2));
-        character.ReduceCurrentMp(null, (int)manaCost);
+        character.ReduceCurrentMp(null, ManaCostRules.ModifiedCost(character, skill, value1, value2));
 
         character.LastCast = DateTime.UtcNow;
         character.IsInPostCast = true;

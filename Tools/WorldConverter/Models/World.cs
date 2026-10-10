@@ -2,7 +2,7 @@
 
 namespace AAEmu.WorldConverter.Models
 {
-    // Примечание. Для запуска созданного кода может потребоваться NET Framework версии 4.5 или более поздней версии и .NET Core или Standard версии 2.0 или более поздней.
+    // Note: Running generated code may require .NET Framework 4.5 or later and .NET Core or .NET Standard 2.0 or later.
     /// <remarks/>
     [Serializable()]
     [System.ComponentModel.DesignerCategoryAttribute("code")]

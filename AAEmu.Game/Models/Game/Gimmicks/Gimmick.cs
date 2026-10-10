@@ -24,7 +24,7 @@ public class Gimmick : Unit
     public uint SpawnerUnitId { get; set; }
     public uint GrasperUnitId { get; set; }
     public string ModelPath { get; set; }
-    // public Quaternion Rot { get; set; } // углы должны быть в радианах
+    // public Quaternion Rot { get; set; } // Angles must be in radians.
     public Vector3 Vel { get; set; }
     public Vector3 AngVel { get; private set; }
     public Vector3 Target { get; set; } = Vector3.Zero;
@@ -145,7 +145,7 @@ public class Gimmick : Unit
         _yaw = (_yaw + Spawner.VelocityY) % 360;
         _roll = (_roll + Spawner.VelocityZ) % 360;
 
-        // Создаем новый Quaternion с заданными значениями вращения
+        // Create a new Quaternion from the specified rotation values.
         return Quaternion.CreateFromYawPitchRoll(xRotation.DegToRad(), yRotation.DegToRad(), zRotation.DegToRad());
     }
 

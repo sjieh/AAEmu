@@ -20,11 +20,11 @@ public class DoodadFuncEnterInstance : DoodadFuncTemplate
         {
             if (character.MainWorldPosition == null)
             {
-                character.MainWorldPosition = character.Transform.CloneDetached(character); // сохраним координаты для возврата в основной мир
+                character.MainWorldPosition = character.Transform.CloneDetached(character); // Save the position to return to the main world.
             }
             else if (character.Transform.InstanceId == WorldManager.DefaultInstanceId)
             {
-                character.MainWorldPosition = character.Transform.CloneDetached(character); // сохраним координаты для возврата в основной мир
+                character.MainWorldPosition = character.Transform.CloneDetached(character); // Save the position to return to the main world.
             }
 
             IndunManager.Instance.RequestDungeonInstance(character, ZoneId, 0);

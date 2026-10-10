@@ -22,13 +22,16 @@ public static class SkillCastOverlapRules
         IsInstantComboHit(castingTime, customGcd);
 
     /// <summary>
-    /// Each hit arms its own custom_gcd. Follow-ups are 10 ms — the reduced
-    /// combo GCD, not a second 1000 ms lock. A skill that only declares
-    /// <c>default_gcd</c> still arms the server default: 29054 skills carry
-    /// custom_gcd 0 with default_gcd set.
+    /// Each hit arms its own <c>custom_gcd</c>. A skill with <c>weapon_gcd_id</c> also arms its
+    /// weapon-based GCD, even if <c>default_gcd</c> is not set. Skills with only <c>default_gcd</c>
+    /// still arm the server default: 29,054 skills carry custom_gcd 0 with default_gcd set.
     /// </summary>
-    public static bool ArmsSharedGlobalCooldown(int castingTime, int customGcd, bool defaultGcd) =>
-        customGcd > 0 || defaultGcd;
+    public static bool ArmsSharedGlobalCooldown(
+        int castingTime,
+        int customGcd,
+        bool defaultGcd,
+        bool hasWeaponGcd = false) =>
+        customGcd > 0 || hasWeaponGcd || defaultGcd;
 
     /// <summary>
     /// A new plot cancels a busy one, except combo hits and a repeat of the same skill

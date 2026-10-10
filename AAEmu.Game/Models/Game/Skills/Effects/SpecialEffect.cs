@@ -1,4 +1,5 @@
 ﻿using AAEmu.Game.Core.Packets;
+using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.Skills.Templates;
 using AAEmu.Game.Models.Game.Units;
 
@@ -47,7 +48,13 @@ public class SpecialEffect : EffectTemplate
 
         var ownership = SpecialEffectOwnershipRules.Classify(SpecialEffectTypeId);
         if (ownership == SpecialEffectOwnership.ClientVisual)
+        {
+            // Combo is client-owned for its animation and prompt, but World must retain its
+            // data-defined follow-up window so the next skill can pass the learned-skill gate.
+            if (SpecialEffectTypeId == SpecialType.Combo && caster is Character character && Value1 > 0)
+                character.Skills?.OpenComboFollowUp((uint)Value1, Value2);
             return; // the client plays it from the fired skill or the plot event; nothing runs here
+        }
 
         var classType = ResolveActionType(SpecialEffectTypeId);
         if (classType == null)

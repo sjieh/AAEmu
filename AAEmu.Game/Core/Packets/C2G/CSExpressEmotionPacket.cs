@@ -17,7 +17,7 @@ public class CSExpressEmotionPacket() : GamePacket(CSOffsets.CSExpressEmotionPac
         Connection?.ActiveChar?.BroadcastPacket(new SCEmotionExpressedPacket(characterObjId, npcObjId, emotionId), true);
 
         //Connection?.ActiveChar?.Quests?.OnExpressFire(emotionId, characterObjId, npcObjId);
-        // инициируем событие
+        // Raise the event.
         //Task.Run(() => QuestManager.Instance.DoOnExpressFireEvents(Connection.ActiveChar, emotionId, characterObjId, npcObjId));
         if (Connection != null)
         {

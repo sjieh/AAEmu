@@ -28,7 +28,7 @@ public class NpcSpawner : Spawner<Npc>
     public WorldInstance ParentWorld { get; set; }
 
     private int _scheduledCount;
-    // Вычисляемое свойство, возвращающее текущее количество NPC из SpawnedNpcs для данного SpawnerId.
+    // Computed property that returns the current NPC count in SpawnedNpcs for this SpawnerId.
     private int CurrentSpawnCount => SpawnedNpcs.TryGetValue(SpawnerId, out var list) ? list.Count : 0;
     private bool IsSpawnScheduled { get; set; } = false;
     private bool IsDespawnScheduled { get; set; } = false;
@@ -343,12 +343,12 @@ public class NpcSpawner : Spawner<Npc>
         {
             case GameScheduleManager.PeriodStatus.NotFound:
                 //Logger.Debug($"[Spawn] No schedule found for NPC {npcId}. Falling back to time window.");
-                break; // Переход к проверке времени
+                break; // Continue by checking the time.
 
             case GameScheduleManager.PeriodStatus.InProgress:
             case GameScheduleManager.PeriodStatus.NotStarted:
             case GameScheduleManager.PeriodStatus.Ended:
-                //Logger.Debug($"[Spawn] Расписание у NPC {npcId} имеется.");
+                //Logger.Debug($"[Spawn] NPC {npcId} has a schedule.");
                 return true;
 
             default:
@@ -405,7 +405,7 @@ public class NpcSpawner : Spawner<Npc>
             {
                 if (hasDefinedTimeWindow || CheckGameScheduleStatus())
                 {
-                    //Logger.Debug($"[Spawn SpawnerId={SpawnerId}] имеет другой спавнер SpawnerId={spawnerId} с расписанием спавна.");
+                    //Logger.Debug($"[Spawn SpawnerId={SpawnerId}] Another spawner (SpawnerId={spawnerId}) has a spawn schedule.");
                     result = true;
                 }
             }
@@ -413,7 +413,7 @@ public class NpcSpawner : Spawner<Npc>
             {
                 if (hasDefinedTimeWindow || CheckGameScheduleStatus())
                 {
-                    //Logger.Debug($"[Spawn SpawnerId={SpawnerId}] имеет расписание спавна.");
+                    //Logger.Debug($"[Spawn SpawnerId={SpawnerId}] has a spawn schedule.");
                     return true;
                 }
             }
@@ -436,12 +436,12 @@ public class NpcSpawner : Spawner<Npc>
             case GameScheduleManager.PeriodStatus.NotStarted:
             case GameScheduleManager.PeriodStatus.Ended:
             case GameScheduleManager.PeriodStatus.InProgress:
-                //Logger.Debug($"[Schedule] NPC TemplateId={npcId} имеет расписание спавна.");
+                //Logger.Debug($"[Schedule] NPC TemplateId={npcId} has a spawn schedule.");
                 return true;
 
             case GameScheduleManager.PeriodStatus.NotFound:
             default:
-                //Logger.Debug($"[Schedule] Unknown schedule status '{status}' for NPC TemplateId={npcId}. Не имеет расписание спавна.");
+                //Logger.Debug($"[Schedule] Unknown schedule status '{status}' for NPC TemplateId={npcId}. No spawn schedule is available.");
                 return false;
         }
     }
@@ -465,7 +465,7 @@ public class NpcSpawner : Spawner<Npc>
             maxPopulation = (uint)playerCount;
         }
 
-        // Используем вычисляемое свойство CurrentSpawnCount вместо _spawnCount
+        // Use the computed CurrentSpawnCount property instead of _spawnCount.
         if (Template.SuspendSpawnCount > 0 && CurrentSpawnCount + AreOtherNpcsInSpawnZone().Item2 >= Template.SuspendSpawnCount)
         {
             //Logger.Debug($"Spawn count ({CurrentSpawnCount}:{AreOtherNpcsInSpawnZone().Item2}) for SpawnerId: {UnitId}:{SpawnerId} reached suspend limit ({Template.SuspendSpawnCount}).");
@@ -503,7 +503,7 @@ public class NpcSpawner : Spawner<Npc>
 
         foreach (var npc in npcs)
         {
-            if (npc.IsDead) // или другой критерий мертвого NPC
+            if (npc.IsDead) // Or another criterion for a dead NPC.
             {
                 //Logger.Debug($"[Spawn SpawnerId={SpawnerId}] Found corpse NPC: ObjId={npc.ObjId}");
                 return true;
@@ -520,24 +520,24 @@ public class NpcSpawner : Spawner<Npc>
     {
         var testRadiusPc = Template.TestRadiusPc == 0 ? Template.TestRadiusNpc : Template.TestRadiusPc;
         var testRadius = testRadiusPc * 50f * testRadiusPc * 50f;
-        // Проверяем, есть ли кэш для текущего SpawnerId
+        // Check whether this SpawnerId has a cached value.
         if (_playerInRadiusCache.TryGetValue((int)SpawnerId, out var cache))
         {
-            // Если с момента последнего обновления прошло меньше 10 секунд, возвращаем кэшированное значение
+            // Return the cached value if it was updated less than 10 seconds ago.
             if ((DateTime.UtcNow - cache.LastUpdate).TotalSeconds < 10)
             {
                 return cache.IsPlayerInRadius;
             }
         }
 
-        // Если кэш устарел или отсутствует, выполняем проверку
+        // Recompute the value if the cache is missing or stale.
         var players = WorldManager.Instance.GetAllCharacters();
         foreach (var player in players)
         {
             var distance = Vector3.DistanceSquared(player.Transform.World.Position, new Vector3(Position.X, Position.Y, Position.Z));
             if (distance <= testRadius)
             {
-                // Обновляем кэш
+                // Update the cache.
                 _playerInRadiusCache[(int)SpawnerId] = new SpawnerPlayerInRadiusCache
                 {
                     IsPlayerInRadius = true,
@@ -547,7 +547,7 @@ public class NpcSpawner : Spawner<Npc>
             }
         }
 
-        // Обновляем кэш (игроков в радиусе нет)
+        // Update the cache (no players are in range).
         _playerInRadiusCache[(int)SpawnerId] = new SpawnerPlayerInRadiusCache
         {
             IsPlayerInRadius = false,
@@ -556,7 +556,7 @@ public class NpcSpawner : Spawner<Npc>
         return false;
     }
 
-    // Структура для хранения кэшированных данных
+    // Stores cached data.
     private struct SpawnerPlayerInRadiusCache
     {
         public bool IsPlayerInRadius { get; set; }
@@ -570,36 +570,36 @@ public class NpcSpawner : Spawner<Npc>
     /// <returns>The number of players within the radius.</returns>
     private int GetNumberOfPlayerInSpawnRadius(NpcSpawnerTemplate template)
     {
-        // Проверяем, есть ли уже кэш для этого SpawnerId
+        // Check whether this SpawnerId already has a cached value.
         if (_playerCountCache.TryGetValue((int)SpawnerId, out var cache))
         {
-            // Если прошло меньше 10 секунд с момента последнего обновления, возвращаем кэшированное значение
+            // Return the cached value if it was updated less than 10 seconds ago.
             if ((DateTime.UtcNow - cache.LastUpdate).TotalSeconds < 10)
             {
                 return cache.PlayerCount;
             }
         }
 
-        // Проверяем, что шаблон и радиус валидны
+        // Validate the template and radius.
         if (template == null || template.TestRadiusNpc <= 0)
             return 0;
 
         var playerCount = 0;
 
-        // Получаем позицию спавна (например, позицию первого NPC или центральную точку)
+        // Get the spawn position (for example, the first NPC's position or the center point).
         if (SpawnedNpcs is { Count: > 0 })
         {
             var npcs = SpawnedNpcs.Values.FirstOrDefault();
             if (npcs?.Count > 0)
             {
-                // Получаем количество игроков в радиусе
+                // Get the number of players in range.
                 var tmpPlayerCount = WorldManager.GetAround<Character>(npcs[0], template.TestRadiusNpc * 50).Count;
                 if (playerCount < tmpPlayerCount)
                     playerCount = tmpPlayerCount;
             }
         }
 
-        // Обновляем кэш для текущего SpawnerId
+        // Update the cache for this SpawnerId.
         _playerCountCache[(int)SpawnerId] = new SpawnerPlayerCountCache
         {
             PlayerCount = playerCount,
@@ -609,14 +609,14 @@ public class NpcSpawner : Spawner<Npc>
         return playerCount;
     }
 
-    // Структура для хранения кэшированных данных
+    // Stores cached data.
     private struct SpawnerPlayerCountCache
     {
         public int PlayerCount { get; set; }
         public DateTime LastUpdate { get; set; }
     }
 
-    // Структура для хранения кэшированных данных
+    // Stores cached data.
     private struct SpawnerNpcsInZoneCache
     {
         public int Count { get; set; }
@@ -624,7 +624,7 @@ public class NpcSpawner : Spawner<Npc>
         public DateTime LastUpdate { get; set; }
     }
 
-    // Словарь для хранения кэша
+    // Dictionary used to store cached values.
     private readonly Dictionary<int, SpawnerNpcsInZoneCache> _npcsInZoneCache = new();
 
     /// <summary>
@@ -638,10 +638,10 @@ public class NpcSpawner : Spawner<Npc>
     {
         var count = 0;
 
-        // Проверяем, есть ли уже кэш для этого SpawnerId
+        // Check whether this SpawnerId already has a cached value.
         if (_npcsInZoneCache.TryGetValue((int)SpawnerId, out var cache))
         {
-            // Если прошло меньше 60 секунд с момента последнего обновления, возвращаем кэшированное значение
+            // Return the cached value if it was updated less than 60 seconds ago.
             if ((DateTime.UtcNow - cache.LastUpdate).TotalSeconds < 10)
             {
                 //Logger.Debug($"Using cached value for SpawnerId: {UnitId}:{SpawnerId}. AreOtherNpcsInSpawnZone: {cache.AreNpcsInZone}");
@@ -651,23 +651,23 @@ public class NpcSpawner : Spawner<Npc>
 
         var areOtherNpcsInZone = false;
 
-        // Итерируем по всем спавнерам
+        // Iterate through all spawners.
         foreach (var spawnerId in SpawnedNpcs.Keys)
         {
-            // Исключаем текущий спавнер
+            // Skip the current spawner.
             if (spawnerId == SpawnerId)
                 continue;
 
-            // Проверяем, есть ли NPC в этом спавнере
+            // Check whether this spawner has any NPCs.
             if (SpawnedNpcs.TryGetValue(spawnerId, out var npcs) && npcs?.Count > 0)
             {
                 //Logger.Debug($"spawn count={_spawnCount + _scheduledCount} for SpawnerId: {UnitId}:{SpawnerId}");
                 count += CurrentSpawnCount + _scheduledCount;
-                areOtherNpcsInZone = npcs.Count > 0; // В другом спавнере есть NPC
+                areOtherNpcsInZone = npcs.Count > 0; // Another spawner has NPCs.
             }
         }
 
-        // Обновляем кэш для текущего SpawnerId
+        // Update the cache for this SpawnerId.
         _npcsInZoneCache[(int)SpawnerId] = new SpawnerNpcsInZoneCache
         {
             Count = count,
@@ -800,10 +800,10 @@ public class NpcSpawner : Spawner<Npc>
         {
             lock (_spawnLock)
             {
-                // Если условия позволяют, планируем респаун
+                // Schedule a respawn if the conditions allow it.
                 if (RespawnTime > 0 && AreOtherNpcsInSpawnZone().Item2 + _scheduledCount < Template.MaxPopulation)
                 {
-                    // Планируем респаун и обновляем _scheduledCount
+                    // Schedule a respawn and update _scheduledCount.
                     IncrementCount(true);
                     //Logger.Info($"Scheduled respawn for NPC {UnitId}:{SpawnerId}:{npc.ObjId} in {RespawnTime} seconds.");
                     npc.Respawn = DateTime.UtcNow.AddSeconds(RespawnTime);
@@ -843,7 +843,7 @@ public class NpcSpawner : Spawner<Npc>
         {
             lock (_spawnLock)
             {
-                // Если планируется немедленный деспаун
+                // Handle an immediate despawn if one is scheduled.
                 if (AreOtherNpcsInSpawnZone().Item2 + _scheduledCount < Template.MaxPopulation)
                 {
                     IncrementCount(true);
@@ -873,7 +873,7 @@ public class NpcSpawner : Spawner<Npc>
         {
             npc.Respawn = DateTime.UtcNow.AddSeconds(RespawnTime);
             npc.ParentWorld.SpawnManager.AddRespawn(npc);
-            // Логика изменения _scheduledCount (если требуется) остаётся неизменной
+            // Keep the _scheduledCount update logic unchanged, if an update is needed.
             var newScheduledCount = Interlocked.Increment(ref _scheduledCount);
             if (_scheduledCount < 0)
             {
@@ -897,7 +897,7 @@ public class NpcSpawner : Spawner<Npc>
 
         lock (_spawnLock)
         {
-            // Установка флага деспауна
+            // Set the despawn flag.
             IsDespawnScheduled = true;
 
             // Creates a copy of the list for safe iteration
@@ -912,7 +912,7 @@ public class NpcSpawner : Spawner<Npc>
                         Logger.Warn("Attempted to despawn a null NPC.");
                         continue;
                     }
-                    // будем деспавнить Npc в любом случае
+                    // Despawn the NPC regardless.
                     // we'll despawn the Npc anyway
                     // Despawns the NPC if it is not in combat
                     //if (!npc.IsInBattle)
@@ -930,7 +930,7 @@ public class NpcSpawner : Spawner<Npc>
                     Logger.Error(ex, $"Failed to despawn NPC {UnitId}:{SpawnerId}:{npc?.ObjId}.");
                 }
             }
-            // Сброс флага после завершения деспауна
+            // Clear the flag after despawning completes.
             IsDespawnScheduled = false;
         }
     }
@@ -945,7 +945,7 @@ public class NpcSpawner : Spawner<Npc>
 
         lock (_spawnLock)
         {
-            // Установка флага деспауна
+            // Set the despawn flag.
             IsDespawnScheduled = true;
 
             // Creates a copy of the list for safe iteration
@@ -968,7 +968,7 @@ public class NpcSpawner : Spawner<Npc>
                     Logger.Error(ex, $"Failed to despawn NPC {UnitId}:{SpawnerId}:{npc?.ObjId}.");
                 }
             }
-            // Сброс флага после завершения деспауна
+            // Clear the flag after despawning completes.
             IsDespawnScheduled = false;
         }
     }
@@ -1031,7 +1031,7 @@ public class NpcSpawner : Spawner<Npc>
 
                 lock (_spawnLock)
                 {
-                    // Спавним NPC по шаблону
+                    // Spawn the NPC from its template.
                     var spawned = npcTemplate.Spawn(this);
                     if (spawned == null || spawned.Count == 0)
                     {
@@ -1094,7 +1094,7 @@ public class NpcSpawner : Spawner<Npc>
 
             case GameScheduleManager.PeriodStatus.NotFound:
                 //Logger.Debug($"[Spawn] No schedule found for NPC {npcId}. Falling back to time window.");
-                break; // Переход к проверке времени
+                break; // Continue by checking the time.
 
             case GameScheduleManager.PeriodStatus.NotStarted:
                 //Logger.Debug($"[Spawn] Schedule not started for NPC {npcId}.");
@@ -1109,7 +1109,7 @@ public class NpcSpawner : Spawner<Npc>
                 return false;
         }
 
-        // Если расписания нет — проверим, задано ли время появления
+        // If there is no schedule, check whether a spawn time is configured.
         if (IsWithinSpawnTime())
         {
             //Logger.Debug($"[Spawn] NPC {npcId} is within spawn time window — spawning enabled.");
@@ -1140,7 +1140,7 @@ public class NpcSpawner : Spawner<Npc>
         }
 
         //Logger.Debug($"[TimeCheck] NPC {Template.Id} has no time window defined.");
-        return true; // было false, но не совсем корректно, т.к. надо спавнить, если не в расписании
+        return true; // Returning false here was inaccurate: spawn when no schedule applies.
     }
 
     /// <summary>

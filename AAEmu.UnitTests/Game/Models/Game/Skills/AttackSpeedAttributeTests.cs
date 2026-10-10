@@ -7,16 +7,14 @@ using AAEmu.UnitTests.Utils.Mocks;
 namespace AAEmu.UnitTests.Game.Models.Game.Skills;
 
 /// <summary>
-/// The attack-speed attributes through the real consumers: <c>melee_speed_mul</c>/<c>ranged_speed_mul</c>
-/// (54/55) and <c>attack_speed_mul</c> (218) pace <see cref="SkillManager.GetAttackDelay"/>, and the
-/// anti-miss multipliers (78/83/88) decide the combat dice in <see cref="Skill.RollCombatDice"/>.
+/// The speed attributes through their consumers: <c>melee_speed_mul</c>/<c>ranged_speed_mul</c> (54/55)
+/// pace weapon swing intervals, while <c>attack_speed_mul</c> (218) affects skill GCD and animation timing.
+/// Anti-miss multipliers (78/83/88) decide the combat dice in <see cref="Skill.RollCombatDice"/>.
 /// </summary>
 /// <remarks>
 /// The intervals are the shipped fallbacks of <c>GetWeaponSpeed</c> (1500 ms melee, 1800 ms ranged) with no
 /// equipment, and an empty <c>GlobalCooldownMul</c>, which is <c>100000 / (0 + 1000) / 100 = 1</c> for a
-/// character. Every number below is therefore the attribute's own effect and nothing else. Comparisons that
-/// pass through the rules class carry a 1 ms tolerance because the factor is a float, not because the two
-/// sides are meant to differ.
+/// character. Comparisons that pass through the rules class carry a 1 ms tolerance for its float factor.
 /// </remarks>
 public class AttackSpeedAttributeTests
 {
@@ -62,26 +60,25 @@ public class AttackSpeedAttributeTests
     }
 
     [Test]
-    public async Task GetAttackDelay_AttackSpeedMul_PacesEveryAttack_AndTheRecoveryOfASkill()
+    public async Task GetAttackDelay_AttackSpeedMul_DoesNotChangeSwingOrSkillIntervals()
     {
         var character = CreateCharacter();
         TestUnitModifier.Apply(character, UnitAttribute.AttackSpeedMul, 1000);
 
-        await Assert.That(SkillManager.GetAttackDelay(Template(MeleeAutoAttack), character)).IsEqualTo(1500.0 * 0.5).Within(Tolerance);
-        await Assert.That(SkillManager.GetAttackDelay(Template(RangedAutoAttack), character)).IsEqualTo(1800.0 * 0.5).Within(Tolerance);
-        // Cast time is a casting_time_mul matter, so only the 1000 ms cooldown and the 1000 ms additional
-        // delay halve: 1000 + 500 + 500.
-        await Assert.That(SkillManager.GetAttackDelay(Template(NormalSkill), character)).IsEqualTo(2000.0).Within(Tolerance);
+        await Assert.That(SkillManager.GetAttackDelay(Template(MeleeAutoAttack), character)).IsEqualTo(1500.0);
+        await Assert.That(SkillManager.GetAttackDelay(Template(RangedAutoAttack), character)).IsEqualTo(1800.0);
+        // Attack speed changes shared GCD/animation timing, not this estimate of skill cooldown plus delay.
+        await Assert.That(SkillManager.GetAttackDelay(Template(NormalSkill), character)).IsEqualTo(3000.0);
     }
 
     [Test]
-    public async Task GetAttackDelay_AttackSpeedMul_OutranksThePerTypeRating()
+    public async Task GetAttackDelay_AttackSpeedMul_DoesNotOverridePerTypeWeaponInterval()
     {
         var character = CreateCharacter();
         TestUnitModifier.Apply(character, UnitAttribute.MeleeSpeedMul, -666, buffIndex: 1);
         TestUnitModifier.Apply(character, UnitAttribute.AttackSpeedMul, 1000, buffIndex: 2);
 
-        await Assert.That(SkillManager.GetAttackDelay(Template(MeleeAutoAttack), character)).IsEqualTo(1500.0 * 0.5).Within(Tolerance);
+        await Assert.That(SkillManager.GetAttackDelay(Template(MeleeAutoAttack), character)).IsEqualTo(1500.0 * 2.99).Within(Tolerance);
     }
 
     [Test]
@@ -90,7 +87,7 @@ public class AttackSpeedAttributeTests
         var fast = CreateCharacter();
         TestUnitModifier.Apply(fast, UnitAttribute.AttackSpeedMul, 4000); // clipped to the +2000 limit
 
-        await Assert.That(SkillManager.GetAttackDelay(Template(NormalSkill), fast)).IsEqualTo(1660.0).Within(Tolerance);
+        await Assert.That(SkillManager.GetAttackDelay(Template(NormalSkill), fast)).IsEqualTo(3000.0).Within(Tolerance);
 
         var slow = CreateCharacter();
         TestUnitModifier.Apply(slow, UnitAttribute.MeleeSpeedMul, -900); // clipped to the -666 limit

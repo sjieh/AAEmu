@@ -94,6 +94,7 @@ public class GameNetwork : Singleton<GameNetwork>
         RegisterPacket(CSOffsets.CSItemUnsecurePacket, 1, typeof(CSItemUnsecurePacket));
         RegisterPacket(CSOffsets.CSEquipmentsSecurePacket, 1, typeof(CSEquipmentsSecurePacket));
         RegisterPacket(CSOffsets.CSEquipmentsUnsecurePacket, 1, typeof(CSEquipmentsUnsecurePacket));
+        RegisterPacket(CSOffsets.CSSwapEquipmentSlotsPacket, 1, typeof(CSSwapEquipmentSlotsPacket));
         RegisterPacket(CSOffsets.CSResurrectCharacterPacket, 1, typeof(CSResurrectCharacterPacket));
         RegisterPacket(CSOffsets.CSChallengeDuelPacket, 1, typeof(CSChallengeDuelPacket));
         RegisterPacket(CSOffsets.CSStartDuelPacket, 1, typeof(CSStartDuelPacket));

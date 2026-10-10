@@ -70,6 +70,7 @@ public static class CSOffsets
     public const ushort CSItemUnsecurePacket = 0x07C;
     public const ushort CSEquipmentsSecurePacket = 0x07D;
     public const ushort CSEquipmentsUnsecurePacket = 0x07E;
+    public const ushort CSSwapEquipmentSlotsPacket = 0x081;
     public const ushort CSResurrectCharacterPacket = 0x082;
     public const ushort CSChallengeDuelPacket = 0x084;
     public const ushort CSStartDuelPacket = 0x085;

@@ -156,7 +156,7 @@ public class TransferManager
         buffId = (uint)BuffConstants.Untouchable; // Buff: Unable to attack this target
         transfer.Buffs.AddBuff(new Buff(transfer, transfer, SkillCaster.GetByType(SkillCasterType.Unit), SkillManager.Instance.GetBuffTemplate(buffId), null, DateTime.UtcNow));
 
-        owner.Bounded = transfer; // запомним параметры связанной части в родителе
+        owner.Bounded = transfer; // Store the linked section's data on its parent.
 
         transfer.Spawn();
         lock (ActiveTransfersLock)

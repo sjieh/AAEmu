@@ -104,10 +104,10 @@ namespace AAEmu.UnitTests.Commons.Network
         public async Task Insert_ShouldInsertBytesIntoTheMiddle()
         {
             var stream = new PacketStream();
-            // Запишем два байта: 'A' и 'C'
+            // Write two bytes: 'A' and 'C'.
             stream.Write((byte)'A');
             stream.Write((byte)'C');
-            // Вставим 'B' на позицию 1
+            // Insert 'B' at position 1.
             stream.Insert(1, [(byte)'B']);
 
             stream.Rollback();
@@ -152,7 +152,7 @@ namespace AAEmu.UnitTests.Commons.Network
             stream1.Write((byte)1);
             stream2.Write((byte)2);
 
-            // Сравнение должно вернуть значение меньше нуля, если stream1 меньше stream2
+            // The comparison should be negative when stream1 is less than stream2.
             await Assert.That(stream1.CompareTo(stream2) < 0).IsTrue();
         }
 
@@ -174,13 +174,13 @@ namespace AAEmu.UnitTests.Commons.Network
         public async Task WriteAndReadQuaternionShort_ShouldReturnApproximatelySameQuaternion()
         {
             var stream = new PacketStream();
-            // Создаём кватернион с произвольными значениями
+            // Create a quaternion with arbitrary values.
             var q = new Quaternion(0.1f, 0.2f, 0.3f, 0.4f);
             stream.WriteQuaternionShort(q);
             stream.Rollback();
 
             var result = stream.ReadQuaternionShort();
-            // Проверяем приближенность для x, y, z, так как w вычисляется через норму
+            // Check the tolerances for x, y, and z because w is calculated from the norm.
             await Assert.That(result.X).IsGreaterThanOrEqualTo(q.X - 0.1f).And.IsLessThanOrEqualTo(q.X + 0.1f);
             await Assert.That(result.Y).IsGreaterThanOrEqualTo(q.Y - 0.1f).And.IsLessThanOrEqualTo(q.Y + 0.1f);
             await Assert.That(result.Z).IsGreaterThanOrEqualTo(q.Z - 0.1f).And.IsLessThanOrEqualTo(q.Z + 0.1f);

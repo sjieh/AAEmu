@@ -28,7 +28,7 @@ public class CSResurrectCharacterPacket() : GamePacket(CSOffsets.CSResurrectChar
 
         var portal = new Portal();
 
-        // поищем сначала "UnitId": 502, "Title": "Temple Priestess",
+        // First, look for "UnitId": 502, "Title": "Temple Priestess".
         // Inside dungeons or other instances, just respawn at the nearest Priestess
         if (Connection.ActiveChar.Transform.InstanceId != WorldManager.DefaultInstanceId)
         {

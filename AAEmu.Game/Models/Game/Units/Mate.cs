@@ -72,6 +72,7 @@ public sealed class Mate : Unit
     public List<uint> Skills { get; set; }
     public MateDb DbInfo { get; set; }
     public Task MateXpUpdateTask { get; set; }
+    public MateDistanceCheckTask DistanceCheckTask { get; set; }
     public bool IsMaxLevel => Level >= ExperienceManager.Instance.MaxMateLevel;
 
     #region Attributes

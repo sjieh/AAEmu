@@ -1407,7 +1407,10 @@ public class WorldManager(
         ResendVisibleObjectsToCharacter(character, clientDroppedVisibility: false);
     }
 
-    public static void ResendVisibleObjectsToCharacter(Character character, bool clientDroppedVisibility)
+    public static void ResendVisibleObjectsToCharacter(
+        Character character,
+        bool clientDroppedVisibility,
+        bool forceDoodadRefresh = false)
     {
         var stuffs = GetNeighborRegionsObjs<GameObject>(character);
         var doodads = new List<Doodad>();
@@ -1439,8 +1442,24 @@ public class WorldManager(
             stuff.AddVisibleObject(character);
         }
 
-        if (!VisibleObjectResendRules.ShouldResendDoodadCreates(clientDroppedVisibility))
+        if (!VisibleObjectResendRules.ShouldResendDoodadCreates(clientDroppedVisibility, forceDoodadRefresh))
             return;
+
+        // On a same-instance zone transition the client may have accepted the pre-teleport create
+        // batch or discarded it while loading. Clear the destination AOI's IDs first so this
+        // acknowledged refresh is safe in either case, then send the authoritative creates below.
+        if (forceDoodadRefresh && !clientDroppedVisibility)
+        {
+            var doodadIds = doodads.Select(doodad => doodad.ObjId).ToArray();
+            for (var i = 0; i < doodadIds.Length; i += SCDoodadsRemovedPacket.MaxCountPerPacket)
+            {
+                var count = Math.Min(doodadIds.Length - i, SCDoodadsRemovedPacket.MaxCountPerPacket);
+                var ids = new uint[count];
+                Array.Copy(doodadIds, i, ids, 0, count);
+                var last = i + count >= doodadIds.Length;
+                character.SendPacket(new SCDoodadsRemovedPacket(last, ids));
+            }
+        }
 
         for (var i = 0; i < doodads.Count; i += SCDoodadsCreatedPacket.MaxCountPerPacket)
         {

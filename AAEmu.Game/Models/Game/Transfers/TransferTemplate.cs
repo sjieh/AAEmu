@@ -16,7 +16,7 @@ public class TransferTemplate
     /// </summary>
     public float Velocity { get; set; }
     public List<TransferBindings> TransferBindings { get; } = []; // selection by owner_id
-    public List<TransferPaths> TransferAllPaths { get; } = []; // selection by owner_id, здесь список всех участков дорог
-    public List<TransferRoads> TransferRoads { get; } = []; // здесь список участков дороги для конкретной модели транспорта
+    public List<TransferPaths> TransferAllPaths { get; } = []; // All road segments selected by owner_id.
+    public List<TransferRoads> TransferRoads { get; } = []; // Road segments for this transport model.
     public List<TransferBindingDoodads> TransferBindingDoodads { get; } = []; // selection by owner_id
 }

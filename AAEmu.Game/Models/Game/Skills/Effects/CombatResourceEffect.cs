@@ -40,8 +40,26 @@ public class CombatResourceEffect : EffectTemplate
         if (amount == 0)
             return;
 
-        var before = unit.GetCombatResource(resourceId);
-        var after = unit.AddCombatResource(resourceId, amount, ResetRemainTime);
+        var castTlId = castObj switch
+        {
+            CastSkill castSkill => castSkill.TlId,
+            CastPlot castPlot => castPlot.TlId,
+            _ => (ushort)0
+        };
+        var skillId = source?.Skill?.Template?.Id ?? castObj switch
+        {
+            CastSkill castSkill => castSkill.SkillId,
+            CastPlot castPlot => castPlot.SkillId,
+            _ => 0
+        };
+
+        if (!unit.TryApplyCombatResourceEffect(resourceId, amount, ResetRemainTime,
+                castTlId, skillId, out var before, out var after))
+        {
+            Logger.Debug("CombatResourceEffect: resource {0} change on {1} suppressed or unchanged",
+                resourceId, unit.ObjId);
+            return;
+        }
 
         Logger.Debug($"CombatResourceEffect: resource {resourceId} on {unit.ObjId} {before} -> {after} (amount {amount}, resetRemainTime {ResetRemainTime})");
 

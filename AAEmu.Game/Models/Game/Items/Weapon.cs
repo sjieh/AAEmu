@@ -173,7 +173,7 @@ public class Weapon : EquipItem
             var parameters = new Dictionary<string, double>
             {
                 ["item_level"] = template.Level,
-                ["item_grade"] = grade.HoldableMagicDps
+                ["item_grade"] = grade.HoldableHealDps
             };
 
             var formulaRes = formula.Evaluate(parameters);

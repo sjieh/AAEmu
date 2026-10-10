@@ -142,6 +142,23 @@ public class CSMoveUnitPacket() : GamePacket(CSOffsets.CSMoveUnitPacket, 1)
                     BondDoodad.TryRelease(character);
                 }
 
+                // Match the non-zone-authority path: while riding a pet mount, only movement
+                // for the mount may move the rider. A rider-authored update can be in the
+                // mount's coordinate frame, so applying it to the attached character can
+                // displace the rider and trigger a false zone handoff.
+                if (character.IsRiding)
+                {
+                    if (character.Transform.Parent == null)
+                    {
+                        var mate = character.ParentWorld.MateManager.GetActiveMates(character.Id).FirstOrDefault();
+                        if (mate != null)
+                            character.Transform.Parent = mate.Transform;
+                    }
+
+                    Logger.Debug("{0} IsRiding, ignoring movement request", character.Name);
+                    return;
+                }
+
                 // Mast / ladder hang (StickyParent) and BindSlave seats: ZoneAuthority used to
                 // rewrite Local world coords while still parented, or clear Parent without
                 // UnbindSlave — player stayed "on the mast" with no get-off. Jump and hang-bit
@@ -344,7 +361,7 @@ public class CSMoveUnitPacket() : GamePacket(CSOffsets.CSMoveUnitPacket, 1)
 
                         if (player.IsRiding)
                         {
-                            // Если мы сидим на питомце и Parent = null, насильно спешиваем персонажа для предотвращения сбоя клиента
+                            // If the character is riding a pet with no parent, dismount them to prevent a client crash.
                             // If we are sitting on a pet and Parent = null, we force it on there to prevent client crashing
                             if (player.Transform.Parent == null)
                             {

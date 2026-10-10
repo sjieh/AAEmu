@@ -12,7 +12,7 @@ public class SCSchoolOfFishDoodadsPacket(bool last, Doodad[] transfers)
     public override PacketStream Write(PacketStream stream)
     {
         stream.Write(last);
-        stream.Write((byte)transfers.Length); // не более 10
+        stream.Write((byte)transfers.Length); // At most 10.
         foreach (var transfer in transfers)
         {
             transfer.WriteFishFinderUnit(stream);

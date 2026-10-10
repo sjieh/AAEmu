@@ -108,6 +108,12 @@ public static class SkillTeleportLanding
         TeleportReason reason,
         bool stayInZone = false)
     {
+        var sourceZoneId = character.Transform.ZoneId;
+        // Every landing supersedes a previous teleport request. Only a same-instance change to
+        // another zone needs a doodad refresh after CSTeleportEnded; instance loads refresh after
+        // their separate CSInstanceLoaded acknowledgement.
+        character.SetPendingTeleportDoodadRefresh(false);
+
         // A rider still parented to a ship or seat would keep following that parent after the
         // landing. Stand up first (no lift-ride Timeout — a recall must not fire the floor mover)
         // and drop mates / slaves / hang before the destination is written.
@@ -143,6 +149,9 @@ public static class SkillTeleportLanding
             // stays inside the current one: a few metres must not trigger a zone handoff.
             if (!stayInZone)
                 character.Transform.FinalizeTransform();
+
+            if (character.Transform.ZoneId != sourceZoneId)
+                character.SetPendingTeleportDoodadRefresh(true);
         }
 
         // Ignore movement packets already in flight from before the landing. Otherwise an old

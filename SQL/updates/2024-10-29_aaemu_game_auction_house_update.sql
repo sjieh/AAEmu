@@ -1,4 +1,4 @@
--- Удаление ненужных столбцов
+-- Remove unused columns.
 ALTER TABLE `auction_house`
 DROP COLUMN `object_id`,
 DROP COLUMN `grade`,
@@ -11,28 +11,28 @@ DROP COLUMN `unsecure_date_time`,
 DROP COLUMN `unpack_date_time`,
 DROP COLUMN `world_id_2`;
 
--- Изменение типа данных столбца `id` на bigint
+-- Change the id column type to bigint.
 ALTER TABLE `auction_house`
 MODIFY COLUMN `id` bigint NOT NULL AUTO_INCREMENT;
 
--- Изменение типа данных столбца `item_id` на bigint
+-- Change the item_id column type to bigint.
 ALTER TABLE `auction_house`
 MODIFY COLUMN `item_id` bigint NOT NULL;
 
--- Изменение типа данных столбца `bid_world_id` на int
+-- Change the bid_world_id column type to int.
 ALTER TABLE `auction_house`
 MODIFY COLUMN `bid_world_id` int NOT NULL;
 
--- Изменение кодировки и сортировки столбцов `client_name` и `bidder_name`
+-- Change the character set and collation of the client_name and bidder_name columns.
 ALTER TABLE `auction_house`
 MODIFY COLUMN `client_name` varchar(45) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
 MODIFY COLUMN `bidder_name` varchar(45) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL;
 
--- Изменение комментария и параметров таблицы
+-- Update the table comment and options.
 ALTER TABLE `auction_house`
 COMMENT = 'Listed AH Items',
 ROW_FORMAT = DYNAMIC;
 
--- Установка начального значения для AUTO_INCREMENT
+-- Set the initial AUTO_INCREMENT value.
 ALTER TABLE `auction_house`
 AUTO_INCREMENT = 1;

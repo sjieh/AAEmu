@@ -301,7 +301,7 @@ public class OnReportNpcArgs : EventArgs
     public uint QuestId { get; set; } // QuestContextId
     public uint NpcId { get; set; } // Npc.TemplateId
     public int Selected { get; set; }
-    public Transform Transform { get; set; } // чтобы проверять расстояние до него
+    public Transform Transform { get; set; } // Used to check the distance to this unit.
 }
 
 public class OnAcceptDoodadArgs : EventArgs
@@ -316,7 +316,7 @@ public class OnReportDoodadArgs : EventArgs
     public uint QuestId { get; set; } // QuestContextId
     public uint DoodadId { get; set; } // Doodad.TemplateId
     public int Selected { get; set; }
-    public Transform Transform { get; set; } // чтобы проверять расстояние до него
+    public Transform Transform { get; set; } // Used to check the distance to this unit.
 }
 
 public class OnReportJournalArgs : EventArgs

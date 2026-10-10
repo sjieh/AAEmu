@@ -259,7 +259,7 @@ public static class Helpers
         return (T)inst?.Invoke(obj, null);
     }
 
-    // Метод для разделения списка/массива на несколько списков/массивов с указанным размером
+    // Split a list or array into multiple lists or arrays of the specified size.
     // Method for splitting a list/array into several lists/arrays with a specified size
     public static List<List<T>> SplitList<T>(List<T> list, int size)
     {

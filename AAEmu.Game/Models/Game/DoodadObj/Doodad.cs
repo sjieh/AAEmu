@@ -433,6 +433,7 @@ public class Doodad : BaseUnit
     public bool LastUseAppliedFunc { get; private set; }
 
     private readonly ConcurrentDictionary<uint, uint> _questReactViewerPhases = new();
+    private readonly ConcurrentDictionary<uint, bool> _questReactViewerGlows = new();
     private readonly ConcurrentDictionary<uint, bool> _useAppliedByCaster = new();
 
     /// <summary>
@@ -542,10 +543,10 @@ public class Doodad : BaseUnit
     }
 
     /*
-     * 1. Создание (посадка) Doodad запускает на стартовой фазе PhaseFunc;
-     * 2. Ждем взаимодействия с Doodad;
-     * 3. Непосредственно взаимодействие начинается с выполнения Func с учётом SkillId;
-     * 4. Далее на следующей фазе начинаем выполнение с фазовых функций, а затем сами функции, если перед этим прошли проверки в фазовых функциях;
+     * 1. Creating (placing) a doodad runs PhaseFunc in the initial phase.
+     * 2. Wait for interaction with the doodad.
+     * 3. The interaction starts by executing Func, taking SkillId into account.
+     * 4. In the next phase, run the phase functions first, then the regular functions if the phase checks pass.
      *
      * 1. Creation (landing) Doodad launches on the PhaseFunc start phase;
      * 2. Looking forward to interacting with Doodad;
@@ -642,7 +643,7 @@ public class Doodad : BaseUnit
                 Logger.Trace($"Use: TemplateId {TemplateId}, Using phase {usePhase} with SkillId {skillId}");
             }
 
-            ToNextPhase = false; // по умолчанию не выполняем следующую фазу
+            ToNextPhase = false; // Do not advance to the next phase by default.
             ListGroupId.Clear();
 
             //  first we find the functions, then we execute
@@ -926,10 +927,10 @@ public class Doodad : BaseUnit
                 return true;
             }
 
-            // требуется переход на другую фазу
+            // A transition to another phase is required.
             if (OverridePhase > 0)
             {
-                // встречается в DoodadFuncConditionalUse
+                // This is used by DoodadFuncConditionalUse.
                 FuncGroupId = (uint)OverridePhase;
                 OverridePhase = 0;
             }
@@ -1089,7 +1090,7 @@ public class Doodad : BaseUnit
 
     private bool DoChangePhaseLocked(BaseUnit caster, int nextPhase)
     {
-        // здесь не надо удалять doodad
+        // Do not remove the doodad here.
         //if (nextPhase == -1)
         //{
         //    Delete();
@@ -1340,8 +1341,65 @@ public class Doodad : BaseUnit
     public override void AddVisibleObject(Character character)
     {
         ApplyQuestReact(character);
-        character.SendPacket(new SCDoodadCreatedPacket(this, GetPhaseFor(character)));
+        var phase = GetPhaseFor(character);
+        var questGlow = GetQuestGlowFor(character, phase, out var selectedQuestFunc);
+        LogQuestDoodadVisibility(character, phase, questGlow, "create", selectedQuestFunc);
+        _questReactViewerGlows[character.ObjId] = questGlow > 0;
+        character.SendPacket(new SCDoodadCreatedPacket(this, phase, questGlow));
         base.AddVisibleObject(character);
+    }
+
+    private uint GetQuestGlowFor(Character character, uint phase, out DoodadFunc selectedQuestFunc)
+    {
+        selectedQuestFunc = SelectQuestFunc(character, DoodadManager.Instance.GetFuncsForGroup(phase));
+        return QuestGlow > 0 || selectedQuestFunc != null ? 1u : 0u;
+    }
+
+    private void LogQuestDoodadVisibility(
+        Character character,
+        uint phase,
+        uint questGlow,
+        string action,
+        DoodadFunc selectedQuestFunc)
+    {
+        // Keep this diagnostic scoped to Eldris while investigating quest 7148.
+        if (TemplateId != 14245)
+            return;
+
+        var candidateQuestFuncs = new List<string>();
+        foreach (var func in DoodadManager.Instance.GetFuncsForGroup(phase))
+        {
+            if (DoodadManager.Instance.GetFuncTemplate(func.FuncId, func.FuncType) is DoodadFuncQuest questFunc)
+                candidateQuestFuncs.Add($"func={func.FuncId} kind={questFunc.QuestKindId} quest={questFunc.QuestId}");
+        }
+
+        var selected = selectedQuestFunc != null &&
+                       DoodadManager.Instance.GetFuncTemplate(selectedQuestFunc.FuncId, selectedQuestFunc.FuncType)
+                           is DoodadFuncQuest selectedQuest
+            ? $"func={selectedQuestFunc.FuncId} kind={selectedQuest.QuestKindId} quest={selectedQuest.QuestId}"
+            : "none";
+        var quest7148State = character.Quests.ActiveQuests.TryGetValue(7148, out var activeQuest7148)
+            ? $"{activeQuest7148.Status}/{activeQuest7148.Step}"
+            : "none";
+
+        Logger.Info(
+            "QuestDoodadVisibility action={0} character={1} charObj={2} template={3} obj={4} basePhase={5} phase={6} baseGlow={7} questGlow={8} funcs=[{9}] selected=[{10}] quest7147Completed={11} quest7148Active={12} quest7148State={13} quest7148Completed={14} quest7148CanStart={15}",
+            action,
+            character.Name,
+            character.ObjId,
+            TemplateId,
+            ObjId,
+            FuncGroupId,
+            phase,
+            QuestGlow,
+            questGlow,
+            string.Join("; ", candidateQuestFuncs),
+            selected,
+            character.Quests.HasQuestCompleted(7147),
+            character.Quests.HasQuest(7148),
+            quest7148State,
+            character.Quests.HasQuestCompleted(7148),
+            CanStartDoodadQuest(character, 7148));
     }
 
     /// <summary>
@@ -1431,8 +1489,25 @@ public class Doodad : BaseUnit
     {
         if (character == null)
             return;
+
         ApplyQuestReact(character);
-        character.SendPacket(new SCDoodadPhaseChangedPacket(this, GetPhaseFor(character)));
+        var phase = GetPhaseFor(character);
+        var questGlow = GetQuestGlowFor(character, phase, out var selectedQuestFunc);
+        var hasPreviousGlow = _questReactViewerGlows.TryGetValue(character.ObjId, out var previousGlow);
+        _questReactViewerGlows[character.ObjId] = questGlow > 0;
+
+        if (hasPreviousGlow && previousGlow != (questGlow > 0))
+        {
+            // The phase packet does not carry the quest-glow bit. Recreate this viewer's
+            // doodad only when that bit changes, so the client can update its interaction prompt.
+            LogQuestDoodadVisibility(character, phase, questGlow, "recreate", selectedQuestFunc);
+            character.SendPacket(new SCDoodadRemovedPacket(ObjId));
+            character.SendPacket(new SCDoodadCreatedPacket(this, phase, questGlow));
+            return;
+        }
+
+        LogQuestDoodadVisibility(character, phase, questGlow, "phase-refresh", selectedQuestFunc);
+        character.SendPacket(new SCDoodadPhaseChangedPacket(this, phase));
     }
 
     /// <summary>
@@ -1444,6 +1519,7 @@ public class Doodad : BaseUnit
         if (character != null)
         {
             _questReactViewerPhases.TryRemove(character.ObjId, out _);
+            _questReactViewerGlows.TryRemove(character.ObjId, out _);
             _useAppliedByCaster.TryRemove(character.ObjId, out _);
         }
 
@@ -1484,13 +1560,19 @@ public class Doodad : BaseUnit
     public PacketStream Write(PacketStream stream, uint funcGroupId)
     {
         var itemManager = ItemId == 0 && ItemTemplateId == 0 ? null : ItemManager.Instance;
-        return Write(stream, funcGroupId, itemManager);
+        return Write(stream, funcGroupId, itemManager, null);
+    }
+
+    public PacketStream Write(PacketStream stream, uint funcGroupId, uint? questGlow)
+    {
+        var itemManager = ItemId == 0 && ItemTemplateId == 0 ? null : ItemManager.Instance;
+        return Write(stream, funcGroupId, itemManager, questGlow);
     }
 
     public PacketStream Write(PacketStream stream, IItemManager itemManager) =>
-        Write(stream, FuncGroupId, itemManager);
+        Write(stream, FuncGroupId, itemManager, null);
 
-    private PacketStream Write(PacketStream stream, uint funcGroupId, IItemManager itemManager)
+    private PacketStream Write(PacketStream stream, uint funcGroupId, IItemManager itemManager, uint? questGlow)
     {
         var goods = default(DoodadPhysicalGoods);
         var isGoods = itemManager != null && DoodadPhysicalGoods.TryResolve(this, itemManager, out goods);
@@ -1504,7 +1586,7 @@ public class Doodad : BaseUnit
         byte flag = 0;
         if (hasLootItem)
             flag |= 0x01;
-        if (QuestGlow > 0)
+        if ((questGlow ?? QuestGlow) > 0)
             flag |= 0x02; // best-effort; retail packs several bits here
         stream.Write(flag);
 

@@ -255,7 +255,7 @@ public class Unit : BaseUnit, IUnit
     [UnitAttribute(UnitAttribute.SpellDamageMul)]
     public virtual float SpellDamageMul { get; set; } = 1.0f;
 
-    // Anti-NPC / anti-PC damage output and heal output (enum_unit_attribute 196-198, 222 and 244-246).
+    // Anti-NPC / anti-PC damage output and heal output (enum_unit_attribute 196-198, 222, 244-246 and 252).
     // They are authored as a per-mille delta from 0, the same convention MeleeDamageMul above follows
     // (Character.MeleeDamageMul and Character.HealMul are the composed forms this mirrors), so a unit
     // without such a bonus is exactly 1.0x and a unit_modifiers row of 1000 is +100%. They compose here
@@ -276,15 +276,18 @@ public class Unit : BaseUnit, IUnit
     [UnitAttribute(UnitAttribute.SpellDamageMulAntiPc)]
     public virtual float SpellDamageMulAntiPc => PerMilleDeltaMul(UnitAttribute.SpellDamageMulAntiPc);
     [UnitAttribute(UnitAttribute.HealDamageMul)]
-    public virtual float HealDamageMul => PerMilleDeltaMul(UnitAttribute.HealDamageMul);
+    public virtual float HealDamageMul => PerMilleDeltaMul(
+        UnitAttribute.HealDamageMul, PleasureResourceModifierDelta(UnitAttribute.HealDamageMul));
+    [UnitAttribute(UnitAttribute.HealDamageMulAntiNpc)]
+    public virtual float HealDamageMulAntiNpc => PerMilleDeltaMul(UnitAttribute.HealDamageMulAntiNpc);
 
     /// <summary>
     /// Composes a <c>*_mul</c> attribute authored as a per-mille delta from 0, the shape
     /// <c>Character.MeleeDamageMul</c> and <c>Character.HealMul</c> already use: the 1000 baseline is
     /// added after every bonus, so no bonus at all is exactly 1.0f and a row of 1000 doubles.
     /// </summary>
-    private float PerMilleDeltaMul(UnitAttribute attribute) =>
-        (float)((CalculateWithBonuses(0d, attribute) + 1000d) / 1000d);
+    private float PerMilleDeltaMul(UnitAttribute attribute, long additionalDelta = 0) =>
+        (float)((CalculateWithBonuses(0d, attribute) + additionalDelta + 1000d) / 1000d);
 
     [UnitAttribute(UnitAttribute.IncomingHealMul)]
     public virtual float IncomingHealMul { get; set; } = 1.0f;
@@ -299,11 +302,11 @@ public class Unit : BaseUnit, IUnit
     [UnitAttribute(UnitAttribute.IncomingSpellDamageMul)]
     public virtual float IncomingSpellDamageMul { get; set; } = 1f;
 
-    // Attack pace and siege output (enum_unit_attribute 54, 55, 119, 149, 204, 215, 218, 260, 261).
-    // The attack-speed ids are one rating seen from several sides, so they are read as the raw per-mille
-    // rating (SpeedMultiplierRules clamps it to unit_attribute_limits' -666..2000 and turns it into a delay
-    // factor) rather than being multiplied into each other. The siege, shield and combat-resource ids
-    // compose their bonuses here so that a unit without such a row is exactly what it was.
+    // Attack speed, animation speed and siege output (enum_unit_attribute 54, 55, 119, 149, 204, 215, 218,
+    // 260, 261). These speed ratings stay raw so their consumers can select the right behavior: 218 scales
+    // animation completion and shared skill GCD; 54/55 can alter weapon-type swing intervals; 119 is an
+    // animation-specific fallback. They are not multiplied together. Siege, shield and combat-resource ids
+    // compose their bonuses here so a unit without such a row keeps its prior value.
     [UnitAttribute(UnitAttribute.MeleeSpeedMul)]
     public long MeleeSpeedRating => (long)CalculateWithBonuses(0d, UnitAttribute.MeleeSpeedMul);
     [UnitAttribute(UnitAttribute.RangedSpeedMul)]
@@ -400,6 +403,11 @@ public class Unit : BaseUnit, IUnit
     /// <c>recovery_cycle</c> is 0 (기쁨 / 슬픔 never drain).
     /// </summary>
     private readonly Dictionary<int, DateTime> _combatResourceDecayAt = [];
+    private readonly object _pleasureResourceSync = new();
+    private DateTime _lastPleasureResourceChangeAt = DateTime.MinValue;
+    private ushort _lastPleasureResourceCastTlId;
+    private uint _lastPleasureResourceSkillId;
+    private readonly HashSet<int> _lastPleasureResourceIdsChanged = [];
 
     public int GetCombatResource(int combatResourceId) => CombatResources.GetValueOrDefault(combatResourceId, 0);
 
@@ -416,17 +424,8 @@ public class Unit : BaseUnit, IUnit
     /// </param>
     public int AddCombatResource(int combatResourceId, int amount, bool resetDecayTimer = true)
     {
-        var max = CombatResourceGameData.Instance.GetMax(combatResourceId);
         var current = GetCombatResource(combatResourceId);
-
-        // max_combat_resource (215) raises or lowers that ceiling for this unit — buff 22278 (정복) grants
-        // +1 on 광란, whose own ceiling is 5. Without such a row the ceiling is the resource's own max.
-        var ceiling = CombatResourceRules.Ceiling(max, MaxCombatResource);
-
-        // An unknown id has no ceiling to clamp against; keep it non-negative rather than inventing one.
-        var updated = ceiling > 0
-            ? Math.Clamp(current + amount, 0, ceiling)
-            : Math.Max(0, current + amount);
+        var updated = PreviewCombatResourceDelta(combatResourceId, amount);
 
         CombatResources[combatResourceId] = updated;
         ArmCombatResourceDecay(combatResourceId, updated, resetDecayTimer);
@@ -434,9 +433,116 @@ public class Unit : BaseUnit, IUnit
         return updated;
     }
 
+    private int PreviewCombatResourceDelta(int combatResourceId, int amount)
+    {
+        // max_combat_resource (215) can adjust the resource's own ceiling.
+        var ceiling = CombatResourceRules.Ceiling(
+            CombatResourceGameData.Instance.GetMax(combatResourceId), MaxCombatResource);
+        var current = GetCombatResource(combatResourceId);
+        return ceiling > 0
+            ? Math.Clamp(current + amount, 0, ceiling)
+            : Math.Max(0, current + amount);
+    }
+
+    /// <summary>
+    /// Applies an effect and enforces the one-second suppression on Pleasure's Happy/Sorrow resources.
+    /// One cast may update each pool once because its paired effect changes both points together.
+    /// </summary>
+    public bool TryApplyCombatResourceEffect(int resourceId, int amount, bool resetDecayTimer,
+        ushort castTlId, uint skillId, out int before, out int after)
+    {
+        if (resourceId is not (26 or 27))
+        {
+            before = GetCombatResource(resourceId);
+            after = AddCombatResource(resourceId, amount, resetDecayTimer);
+            return true;
+        }
+
+        lock (_pleasureResourceSync)
+        {
+            before = GetCombatResource(resourceId);
+            after = PreviewCombatResourceDelta(resourceId, amount);
+            if (after == before || !CanChangePleasureResource(resourceId, castTlId, skillId, DateTime.UtcNow))
+                return false;
+
+            after = AddCombatResource(resourceId, amount, resetDecayTimer);
+            return after != before;
+        }
+    }
+
+    private bool CanChangePleasureResource(int resourceId, ushort castTlId, uint skillId, DateTime now)
+    {
+        // A nonzero TL id ties the two authored resource effects to one cast. Effects without a cast id
+        // cannot join the pair and consume the single change permitted in the one-second window.
+        var sameCast = castTlId != 0 && castTlId == _lastPleasureResourceCastTlId &&
+                       skillId == _lastPleasureResourceSkillId;
+        if (sameCast)
+        {
+            if (!_lastPleasureResourceIdsChanged.Add(resourceId))
+                return false;
+            _lastPleasureResourceChangeAt = now;
+            return true;
+        }
+
+        if (_lastPleasureResourceChangeAt != DateTime.MinValue &&
+            now - _lastPleasureResourceChangeAt < TimeSpan.FromSeconds(1))
+            return false;
+
+        _lastPleasureResourceChangeAt = now;
+        _lastPleasureResourceCastTlId = castTlId;
+        _lastPleasureResourceSkillId = skillId;
+        _lastPleasureResourceIdsChanged.Clear();
+        _lastPleasureResourceIdsChanged.Add(resourceId);
+        return true;
+    }
+
+    /// <summary>
+    /// Happy and Sorrow are opposite modifiers: each Happy point adds healing and removes healing-skill
+    /// damage, while each Sorrow point does the reverse. A paired +1/-1 change therefore shifts the balance
+    /// by two points, applying both authored 2% changes. Emotion Amplification doubles the result at either
+    /// resource endpoint.
+    /// </summary>
+    public long PleasureResourceModifierDelta(UnitAttribute attribute)
+    {
+        if (this is not Character character ||
+            (character.Ability1 != AbilityType.Pleasure &&
+             character.Ability2 != AbilityType.Pleasure &&
+             character.Ability3 != AbilityType.Pleasure))
+            return 0;
+
+        var balance = GetCombatResource(26) - GetCombatResource(27);
+        var perPoint = attribute switch
+        {
+            UnitAttribute.HealMulOnlyHeal => CombatResourceGameData.Instance.GetModifierPerPoint(26, attribute),
+            UnitAttribute.HealDamageMul => CombatResourceGameData.Instance.GetModifierPerPoint(27, attribute),
+            _ => 0
+        };
+
+        var modifierDelta = attribute == UnitAttribute.HealDamageMul
+            ? -balance * perPoint
+            : balance * perPoint;
+
+        var happyMax = CombatResourceGameData.Instance.GetMax(26);
+        var sorrowMax = CombatResourceGameData.Instance.GetMax(27);
+        var atResourceEndpoint = IsAtResourceEndpoint(26, happyMax) || IsAtResourceEndpoint(27, sorrowMax);
+        if (atResourceEndpoint && character.Buffs.CheckBuff((uint)BuffConstants.EmotionAmplification))
+            modifierDelta *= 2;
+
+        return (long)Math.Round(modifierDelta);
+    }
+
+    private bool IsAtResourceEndpoint(int resourceId, int maximum)
+    {
+        if (maximum <= 0)
+            return false;
+
+        var amount = GetCombatResource(resourceId);
+        return amount <= 0 || amount >= maximum;
+    }
+
     /// <summary>
     /// After an ability swap or skillsaver activate: write newly owned defaults, then
-    /// publish every non-empty total. Login uses the same two steps. Held amounts and
+    /// publish the current totals. Login uses the same two steps. Held amounts and
     /// decay timers stay as <see cref="InitializeCombatResources"/> left them.
     /// </summary>
     public void SyncCombatResourcesAfterAbilityChange()
@@ -610,19 +716,37 @@ public class Unit : BaseUnit, IUnit
         CombatResourcePointLog?.Add((resource.Id, amount));
 
         var packet = new SCCombatResourcePointPacket(ObjId, resource.Id, (ulong)Math.Max(0, amount), updateTimeMs);
+        Logger.Debug("Send combat resource point: unit {0}, resource {1}, amount {2}, audience {3}",
+            ObjId, resource.Id, amount, resource.SendTypeId == 2 ? "Broadcast" : "Self");
         if (resource.SendTypeId == 2)
             BroadcastPacket(packet, true);
         else
             (this as Char.Character)?.SendPacket(packet);
     }
 
-    /// <summary>Sends every non-empty pool, so a freshly entered client starts with a bar that matches the server.</summary>
+    /// <summary>
+    /// Sends every pool owned by the character's current abilities, including zeroes so the client gets an
+    /// authoritative initial value for both pips. Non-character units publish only pools they currently hold.
+    /// </summary>
     public void SendAllCombatResources()
     {
-        foreach (var resource in CombatResourceGameData.Instance.All)
+        var resources = CombatResourceGameData.Instance.All;
+        var sendZeroes = false;
+        if (this is Character character)
+        {
+            var owned = CombatResourceGameData.Instance.ResourceIdsForAbilities(
+                (int)character.Ability1, (int)character.Ability2, (int)character.Ability3);
+            resources = resources.Where(resource => owned.Contains(resource.Id));
+            sendZeroes = true;
+            Logger.Debug("Sending combat resource snapshot for {0}: abilities {1}/{2}/{3}, resources {4}",
+                character.Name, character.Ability1, character.Ability2, character.Ability3,
+                string.Join(",", owned.OrderBy(id => id)));
+        }
+
+        foreach (var resource in resources)
         {
             var amount = GetCombatResource(resource.Id);
-            if (amount != 0)
+            if (sendZeroes || amount != 0)
                 BroadcastCombatResource(resource, amount, updateTimeMs: 0);
         }
     }
@@ -2243,7 +2367,7 @@ public class Unit : BaseUnit, IUnit
     /// <returns>Returns true if it's initial aggro</returns>
     public bool AddUnitAggro(AggroKind kind, Unit unit, int amount)
     {
-        //var player = unit as Character; // TODO player.Region становится равным null | player.Region becomes null
+        //var player = unit as Character; // TODO: player.Region becomes null.
         var player = unit as Character;
         var npc = this as Npc;
         var isNewAggro = false;
@@ -2316,7 +2440,7 @@ public class Unit : BaseUnit, IUnit
             player.IsInAggroListOf.Add(this.ObjId, this);
         }
         //player?.Quests.OnAggro(this);
-        // инициируем событие
+        // Raise the event.
         //Task.Run(() => QuestManager.Instance.DoOnAggroEvents(player, this));
         if (npc != null)
         {

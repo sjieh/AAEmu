@@ -129,16 +129,23 @@ public static class SkillUseConditionRules
 
     /// <summary>
     /// Whether a character may cast a skill it holds no record of. Ability skills (<c>ability_id</c>
-    /// other than 0) are the ones that have to be learned; the basic attacks, the racial defaults, the
-    /// common skills every character has and item-granted casts are not.
+    /// other than 0) normally have to be learned. Plot-only templates, basic attacks, racial defaults,
+    /// common skills, combo-linked follow-ups and item-granted casts are allowed through this
+    /// learned-skill check.
     /// </summary>
     /// <remarks>
     /// A live buff can grant a skill (<c>buff_skills</c>, B6), and
     /// <c>CharacterSkills.HasSkill</c> already reports those as held, so a granted skill passes here
     /// exactly like a learned one.
     /// </remarks>
-    public static bool AllowsUnlearnedCast(AbilityType abilityId, bool isItemCast, bool isDefaultSkill, bool isCommonSkill)
-        => abilityId == AbilityType.General || isItemCast || isDefaultSkill || isCommonSkill;
+    public static bool AllowsUnlearnedCast(
+        AbilityType abilityId,
+        bool isItemCast,
+        bool isDefaultSkill,
+        bool isCommonSkill,
+        bool isPlotOnly = false,
+        bool isComboFollowUp = false)
+        => abilityId == AbilityType.General || isItemCast || isDefaultSkill || isCommonSkill || isPlotOnly || isComboFollowUp;
 
     /// <summary>
     /// The failure shown when a character casts an ability skill it has no record of.

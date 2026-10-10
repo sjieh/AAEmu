@@ -61,10 +61,23 @@ public class KnockBack : SpecialEffectAction
         // Players are World-owned for movement; NPCs under ZoneAuthority get position from Zone.
         if (trg is Character || !WorldIntegration.ZoneAuthority)
         {
-            trg.SetPosition(destX, destY, destZ,
-                trg.Transform.World.Rotation.X,
-                trg.Transform.World.Rotation.Y,
-                trg.Transform.World.Rotation.Z);
+            var transform = trg.Transform;
+            if (transform.Parent != null)
+            {
+                // Knockback destinations are calculated in world coordinates, while SetPosition writes
+                // Transform.Local. A mounted character is parented to its mate, so writing the world
+                // destination directly as local coordinates adds the mount position a second time.
+                var localPosition = transform.GetLocalFromWorld(destX, destY, destZ);
+                var localRotation = transform.Local.Rotation;
+                trg.SetPosition(localPosition.X, localPosition.Y, localPosition.Z,
+                    localRotation.X, localRotation.Y, localRotation.Z);
+            }
+            else
+            {
+                var worldRotation = transform.World.Rotation;
+                trg.SetPosition(destX, destY, destZ,
+                    worldRotation.X, worldRotation.Y, worldRotation.Z);
+            }
         }
 
         if (WorldIntegration.ZoneAuthority)

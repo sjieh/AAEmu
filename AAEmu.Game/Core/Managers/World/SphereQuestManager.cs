@@ -338,7 +338,7 @@ public class SphereQuestManager(WorldInstance parent) : ISphereQuestManager
 
     /// <summary>
     /// LoadQuestSpheres by ZeromusXYZ
-    /// Считываем все сферы из всех инстансов
+    /// Read all spheres from every instance.
     /// Read all spheres from all instances
     /// </summary>
     /// <returns></returns>
@@ -403,7 +403,7 @@ public class SphereQuestManager(WorldInstance parent) : ISphereQuestManager
                         }
 
                         sphere.Radius = float.Parse(l4.AsSpan(7), NumberStyles.Float, CultureInfo.InvariantCulture);
-                        // конвертируем координаты из локальных в мировые, сразу при считывании из файла пути
+                        // Convert local coordinates to world coordinates as the route file is read.
                         // convert coordinates from local to world, immediately when reading the path from the file
                         sphere.Xyz = ZoneManager.Instance.ConvertToWorldCoordinates(zoneId, sphere.Xyz);
                         if (!sphereQuests.TryGetValue(sphere.ComponentId, out var value))

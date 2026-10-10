@@ -713,10 +713,8 @@ public class Buffs : IBuffs
                 case BuffStackRule.Extend:
                     {
                         // Extend ADDS the incoming duration to what is left of the live instance; refresh
-                        // replaces it. One instance for the whole family, like Refresh: the 95 shipped
-                        // rows are single-source consumables or world effects (4841 연료 주입, 5209 맑은
-                        // 정신, 2287 강력한 화염), where a second caster's application is the same effect
-                        // continuing rather than a second effect to hold alongside.
+                        // replaces it. It keeps one instance for the whole family, while increasing its
+                        // application count up to max_stack. max_life_time independently caps the total timer.
                         var live = FindLiveInstance(buff.Template.BuffId);
                         if (live != null)
                         {
@@ -922,7 +920,7 @@ public class Buffs : IBuffs
                 {
                     buff.InUse = true;
                     buff.State = EffectState.Acting;
-                    buff.Template.Start(buff.Caster, owner, buff); // TODO поменять на target
+                    buff.Template.Start(buff.Caster, owner, buff); // TODO: Change this to target.
                 }
 
                 // If Owner has buffs that prevent it from doing combat, then remove the aggro for it

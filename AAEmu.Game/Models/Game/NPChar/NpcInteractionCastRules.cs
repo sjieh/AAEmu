@@ -1,9 +1,11 @@
 using AAEmu.Game.GameData;
+using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.Skills;
 using AAEmu.Game.Models.Game.Skills.Plots;
 using AAEmu.Game.Models.Game.Skills.Plots.Tree;
 using AAEmu.Game.Models.Game.Units;
+using AAEmu.Game.Models.StaticValues;
 
 namespace AAEmu.Game.Models.Game.NPChar;
 
@@ -53,6 +55,31 @@ public static class NpcInteractionCastRules
                 return true;
 
         return false;
+    }
+
+    /// <summary>
+    /// Whether this is a conversation action offered by the NPC the character is currently interacting
+    /// with. The generic NPC talk skill is always an interaction; quest-talk NPCs also use the generic
+    /// quest-give action.
+    /// </summary>
+    public static bool IsNpcConversationAction(Character character, uint skillId)
+    {
+        if (character?.CurrentInteractionObject is not Npc interactionNpc ||
+            interactionNpc.Template == null || skillId == 0)
+            return false;
+
+        if (skillId == SkillsEnum.NpcTalk)
+            return true;
+
+        var questTalk = QuestManager.Instance.IsQuestTalkNpc(interactionNpc.TemplateId);
+        if (questTalk && skillId == SkillsEnum.GiveQuest)
+            return true;
+
+        var offeredSkills = NpcInteractionRules.ComposeSkills(
+            interactionNpc.Template,
+            questTalk,
+            NpcInteractionGameData.Instance.GetSkills(interactionNpc.Template.NpcInteractionSetId));
+        return offeredSkills.Contains(skillId);
     }
 
     /// <summary>

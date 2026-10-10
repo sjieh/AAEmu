@@ -17,10 +17,10 @@ public class DoodadFuncRequireItem : DoodadPhaseFuncTemplate
         {
             //character.Quests.OnInteraction(WorldInteractionId, character.CurrentTarget);
             if (character.Inventory.GetItemsCount(ItemId) > 0)
-                return false; // продолжим выполнение, подходящий квест и есть нужный предмет
+                return false; // Continue: the quest matches and the character has the required item.
             else
-                return true; // прерываем, не подходящий квест и нет нужного предмета
+                return true; // Stop: the quest does not match and the character lacks the required item.
         }
-        return true; // прерываем, не подходящий квест и нет нужного предмета
+        return true; // Stop: the quest does not match and the character lacks the required item.
     }
 }

@@ -24,7 +24,7 @@ public class DoodadFuncEnterSysInstance : DoodadFuncTemplate
         // Set main world when requesting to exit the main world or if it was never set before
         if (character.MainWorldPosition == null || character.Transform.InstanceId == WorldManager.DefaultInstanceId)
         {
-            character.MainWorldPosition = character.Transform.CloneDetached(character); // сохраним координаты для возврата в основной мир
+            character.MainWorldPosition = character.Transform.CloneDetached(character); // Save the position to return to the main world.
         }
 
         if (!IndunManager.Instance.InstanceHasChannels(ZoneId))

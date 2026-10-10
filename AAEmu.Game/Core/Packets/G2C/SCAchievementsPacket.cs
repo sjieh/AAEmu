@@ -8,7 +8,7 @@ public class SCAchievementsPacket(List<AchievementInfo> achievements) : GamePack
 {
     public override PacketStream Write(PacketStream stream)
     {
-        stream.Write(achievements.Count); // count // больше 50 не посылаем
+        stream.Write(achievements.Count); // Count; send no more than 50.
         foreach (var achievement in achievements)
         {
             stream.Write(achievement.Id);       // type

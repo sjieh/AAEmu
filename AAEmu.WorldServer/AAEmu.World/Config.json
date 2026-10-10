@@ -18,7 +18,7 @@
     "Port": 1239
   },
   "GameContentRoot": "",
-  "ZoneGameDataRoot": "",
+  "ZoneGameDataRoot": "D:\\Games\\AAEmu\\game",
   "NpcSpawnerActivate": {
     "Enabled": true,
     "PrewarmOnZoneLoaded": false,

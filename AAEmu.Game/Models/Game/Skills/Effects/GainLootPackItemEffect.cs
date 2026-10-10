@@ -1,7 +1,9 @@
 ﻿using AAEmu.Game.Core.Packets;
+using AAEmu.Game.Core.Managers;
 using AAEmu.Game.GameData;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.Items.Actions;
+using AAEmu.Game.Models.Game.Skills;
 using AAEmu.Game.Models.Game.Skills.Templates;
 using AAEmu.Game.Models.Game.Units;
 
@@ -61,24 +63,40 @@ public class GainLootPackItemEffect : EffectTemplate
                 return;
             }
 
-            // Consume exactly one (or ConsumeCount) from the SkillItem stack — purses stack
-            // (max_stack_size=1000). Full RemoveItem wiped the entire stack on a single use.
-            var burn = ConsumeCount > 0 ? ConsumeCount : 1;
-            var burned = character.Inventory.Bag.ConsumeItem(
-                ItemTaskType.ConsumeSkillSource, sourceItem.TemplateId, burn, sourceItem);
-            if (burned < burn)
+            // A skill can list the source item among skill_reagents. In that case its reagent rows
+            // already consume the authored total (for example, 10 Thistle includes the Thistle used
+            // to invoke this skill), so the default source-item burn would charge one extra.
+            // Explicit ConsumeCount remains an additional effect-specific source cost.
+            var sourceCoveredByReagent = ConsumeCount <= 0 &&
+                                         SkillReagentsConsumeSource(character, source.Skill, sourceItem.TemplateId);
+            var burn = sourceCoveredByReagent ? 0 : ConsumeCount > 0 ? ConsumeCount : 1;
+            if (burn > 0)
             {
-                Logger.Warn(
-                    "GainLootPackItemEffect {0}: ConsumeItem burned {1}/{2} for {3} (tpl {4}) — refusing loot",
-                    LootPackId, burned, burn, sourceItem.Id, sourceItem.TemplateId);
-                return;
+                var burned = character.Inventory.Bag.ConsumeItem(
+                    ItemTaskType.ConsumeSkillSource, sourceItem.TemplateId, burn, sourceItem);
+                if (burned < burn)
+                {
+                    Logger.Warn(
+                        "GainLootPackItemEffect {0}: ConsumeItem burned {1}/{2} for {3} (tpl {4}) — refusing loot",
+                        LootPackId, burned, burn, sourceItem.Id, sourceItem.TemplateId);
+                    return;
+                }
             }
 
             byte? inheritedGrade = InheritGrade ? sourceItem.Grade : null;
             pack.GiveLootPack(character, actAbility, ItemTaskType.SkillEffectGainItem, inheritedGrade: inheritedGrade);
-            Logger.Info(
-                "GainLootPackItemEffect {0}: consumed {1}x item {2} tpl {3}, granted loot",
-                LootPackId, burn, sourceItem.Id, sourceItem.TemplateId);
+            if (sourceCoveredByReagent)
+            {
+                Logger.Info(
+                    "GainLootPackItemEffect {0}: source item {1} tpl {2} is covered by skill {3}'s reagent cost; granted loot",
+                    LootPackId, sourceItem.Id, sourceItem.TemplateId, source.Skill?.Template?.Id ?? 0);
+            }
+            else
+            {
+                Logger.Info(
+                    "GainLootPackItemEffect {0}: consumed {1}x item {2} tpl {3}, granted loot",
+                    LootPackId, burn, sourceItem.Id, sourceItem.TemplateId);
+            }
             return;
         }
 
@@ -92,5 +110,31 @@ public class GainLootPackItemEffect : EffectTemplate
         }
 
         Logger.Warn($"GainLootPackItemEffect {LootPackId}: expected SkillItem caster for consume path");
+    }
+
+    private static bool SkillReagentsConsumeSource(Character character, Skill skill, uint sourceItemTemplateId)
+    {
+        if (skill?.Template == null)
+            return false;
+
+        var reagents = SkillManager.Instance.GetSkillReagentsBySkillId(skill.Template.Id);
+        if (reagents.Count == 0)
+            return false;
+
+        if (!skill.Template.FirstReagentOnly)
+            return reagents.Any(reagent => reagent.ItemId == sourceItemTemplateId && reagent.Amount > 0);
+
+        // Match Skill.ApplyEffects: with FirstReagentOnly, only the first reagent the character
+        // has enough of is charged.
+        foreach (var reagent in reagents)
+        {
+            character.Inventory.Bag.GetAllItemsByTemplate(reagent.ItemId, -1, out _, out var count);
+            if (count < reagent.Amount)
+                continue;
+
+            return reagent.ItemId == sourceItemTemplateId && reagent.Amount > 0;
+        }
+
+        return false;
     }
 }

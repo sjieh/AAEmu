@@ -1,6 +1,8 @@
 using AAEmu.Commons.Utils;
 using AAEmu.Game.GameData.Framework;
 using AAEmu.Game.Models.Game.Skills;
+using AAEmu.Game.Models.Game.Skills.Templates;
+using AAEmu.Game.Models.Game.Units;
 using AAEmu.Game.Utils.DB;
 
 using Microsoft.Data.Sqlite;
@@ -86,11 +88,13 @@ public class CombatResourceGameData : Singleton<CombatResourceGameData>, IGameDa
 
     private Dictionary<int, CombatResource> _resources;
     private Dictionary<int, HashSet<int>> _resourceIdsByAbility;
+    private Dictionary<int, List<BonusTemplate>> _unitModifiersByResource;
 
     public void Load(SqliteConnection connection)
     {
         _resources = [];
         _resourceIdsByAbility = [];
+        _unitModifiersByResource = [];
 
         using (var command = connection.CreateCommand())
         {
@@ -150,7 +154,41 @@ public class CombatResourceGameData : Singleton<CombatResourceGameData>, IGameDa
             }
         }
 
-        Logger.Info("Loaded {0} combat resources", _resources.Count);
+        // Resource-owned unit modifiers use linear_level_bonus against the held point count.
+        // For example, 2000 / 100 = 20 per mille, or 2%, per point.
+        using (var modifierCommand = connection.CreateCommand())
+        {
+            modifierCommand.CommandText = "SELECT * FROM unit_modifiers WHERE owner_type='CombatResource'";
+            modifierCommand.Prepare();
+            using var sqliteReader = modifierCommand.ExecuteReader();
+            using var reader = new SQLiteWrapperReader(sqliteReader);
+            while (reader.Read())
+            {
+                if (!reader.GetBoolean("enable", true))
+                    continue;
+
+                var resourceId = reader.GetInt32("owner_id", 0);
+                if (resourceId <= 0)
+                    continue;
+
+                if (!_unitModifiersByResource.TryGetValue(resourceId, out var modifiers))
+                {
+                    modifiers = [];
+                    _unitModifiersByResource[resourceId] = modifiers;
+                }
+
+                modifiers.Add(new BonusTemplate
+                {
+                    Attribute = (UnitAttribute)reader.GetInt32("unit_attribute_id", 0),
+                    ModifierType = (UnitModifierType)reader.GetInt32("unit_modifier_type_id", 0),
+                    Value = reader.GetInt64("value", 0),
+                    LinearLevelBonus = reader.GetInt32("linear_level_bonus", 0)
+                });
+            }
+        }
+
+        Logger.Info("Loaded {0} combat resources and modifiers for {1} resources",
+            _resources.Count, _unitModifiersByResource.Count);
     }
 
     public void PostLoad()
@@ -161,6 +199,17 @@ public class CombatResourceGameData : Singleton<CombatResourceGameData>, IGameDa
 
     /// <summary>Ceiling for a resource, 0 when the id is unknown.</summary>
     public int GetMax(int id) => Get(id)?.Max ?? 0;
+
+    /// <summary>Per-mille attribute change for each point in the named resource.</summary>
+    public double GetModifierPerPoint(int resourceId, UnitAttribute attribute)
+    {
+        if (_unitModifiersByResource == null || !_unitModifiersByResource.TryGetValue(resourceId, out var modifiers))
+            return 0;
+
+        var modifier = modifiers.FirstOrDefault(candidate =>
+            candidate.Attribute == attribute && candidate.ModifierType == UnitModifierType.Value);
+        return modifier == null ? 0 : modifier.LinearLevelBonus / 100d;
+    }
 
     /// <summary>Every defined resource — used to seed a unit's pools and to drive the decay tick.</summary>
     public IEnumerable<CombatResource> All => _resources?.Values ?? Enumerable.Empty<CombatResource>();
@@ -177,6 +226,8 @@ public class CombatResourceGameData : Singleton<CombatResourceGameData>, IGameDa
         foreach (var resource in resources ?? [])
             _resources[resource.Id] = resource;
 
+        _unitModifiersByResource = [];
+
         _resourceIdsByAbility = [];
         if (resourceIdsByAbility == null)
             return;
@@ -188,6 +239,7 @@ public class CombatResourceGameData : Singleton<CombatResourceGameData>, IGameDa
     {
         _resources = [];
         _resourceIdsByAbility = [];
+        _unitModifiersByResource = [];
     }
 
     /// <summary>

@@ -42,7 +42,7 @@ public class DoodadFuncTimer : DoodadPhaseFuncTemplate
 
             owner.GrowthTime = DateTime.UtcNow.AddMilliseconds(timeLeft);
 
-            // Отменяем текущую задачу, если она существует
+            // Cancel the current task if one exists.
             // Cancel the current task if it exists
             if (owner.FuncTask != null)
             {
@@ -56,13 +56,13 @@ public class DoodadFuncTimer : DoodadPhaseFuncTemplate
                 }
             }
 
-            // Создаем и назначаем новую задачу
+            // Create and schedule a new task.
             // Create and assign a new task
             owner.FuncTask = new DoodadFuncTimerTask(caster, owner, 0, NextPhase);
             TaskManager.Instance.Schedule(owner.FuncTask, TimeSpan.FromMilliseconds(timeLeft));
         }
 
-        // никогда не прерываем последовательность фазовых функций
+        // Never interrupt the sequence of phase functions.
         // we never interrupt the sequence of phase functions
         return false;
     }

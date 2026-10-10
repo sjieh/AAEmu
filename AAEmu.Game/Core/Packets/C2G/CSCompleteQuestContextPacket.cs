@@ -21,7 +21,7 @@ public class CSCompleteQuestContextPacket() : GamePacket(CSOffsets.CSCompleteQue
         //Connection.ActiveChar.Quests.OnReportToNpc(_npcObjId, _questContextId, _selected);
         //Connection.ActiveChar.Quests.OnReportToDoodad(_doodadObjId, _questContextId, _selected);
         //owner.Quests.Complete(questContextId, selected, true);
-        // инициируем событие
+        // Raise the event.
         //Task.Run(() => QuestManager.Instance.DoReportEvents(Connection.ActiveChar, _questContextId, _npcObjId, _doodadObjId, _selected));
         QuestManager.Instance.DoReportEvents(Connection.ActiveChar, _questContextId, _npcObjId, _doodadObjId, _selected);
     }

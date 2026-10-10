@@ -7,7 +7,7 @@ public class CSLeaveChatChannelPacket() : GamePacket(CSOffsets.CSLeaveChatChanne
 {
     public override void Read(PacketStream stream)
     {
-        var chat = stream.ReadInt64(); // TODO нужно разложить
+        var chat = stream.ReadInt64(); // TODO: Decode this value.
 
         Logger.Debug("LeaveChatChannel, Chat: {0}", chat);
     }

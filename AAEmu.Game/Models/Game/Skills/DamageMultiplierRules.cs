@@ -6,9 +6,10 @@ namespace AAEmu.Game.Models.Game.Skills;
 
 /// <summary>
 /// What a damage effect's victim is, for picking between the anti-NPC and anti-PC output multipliers
-/// (<c>enum_unit_attribute</c> 196-198 and 244-246). Pet and summon classes (<c>Slave</c> owned by a
-/// player, <c>Mate</c>) are not one of the two victim kinds the content authors split on, and the
-/// content DB only carries the two trios, so they fall to <see cref="Other"/> and take no multiplier.
+/// (<c>enum_unit_attribute</c> 196-198 and 244-246, plus heal anti-NPC attribute 252). Pet and summon
+/// classes (<c>Slave</c> owned by a player, <c>Mate</c>) are not one of the two victim kinds the content
+/// authors split on, and the content DB only carries these attributes, so they fall to <see cref="Other"/>
+/// and take no multiplier.
 /// </summary>
 public enum DamageVictimKind
 {
@@ -18,25 +19,28 @@ public enum DamageVictimKind
 }
 
 /// <summary>
-/// The attacker's six anti-kind output multipliers in one value: melee/ranged/spell against an NPC
-/// victim and melee/ranged/spell against a player victim. Each is a factor (1000 per-mille authored as
+/// The attacker's anti-kind output multipliers in one value: melee/ranged/spell against NPCs and
+/// players, plus healing damage against NPCs. There is no heal anti-PC attribute, so healing damage
+/// against a player uses the spell anti-PC multiplier. Each is a factor (1000 per-mille authored as
 /// 1.0x), already composed by <see cref="Unit"/> from every bonus the attacker carries.
 /// </summary>
 public readonly record struct AntiKindDamageMultipliers(
     float MeleeAntiNpc,
     float RangedAntiNpc,
     float SpellAntiNpc,
+    float HealAntiNpc,
     float MeleeAntiPc,
     float RangedAntiPc,
     float SpellAntiPc)
 {
     /// <summary>An attacker that carries no such bonus: every factor is exactly 1.0f.</summary>
-    public static AntiKindDamageMultipliers None => new(1f, 1f, 1f, 1f, 1f, 1f);
+    public static AntiKindDamageMultipliers None => new(1f, 1f, 1f, 1f, 1f, 1f, 1f);
 
     public static AntiKindDamageMultipliers From(Unit attacker) => new(
         attacker.MeleeDamageMulAntiNpc,
         attacker.RangedDamageMulAntiNpc,
         attacker.SpellDamageMulAntiNpc,
+        attacker.HealDamageMulAntiNpc,
         attacker.MeleeDamageMulAntiPc,
         attacker.RangedDamageMulAntiPc,
         attacker.SpellDamageMulAntiPc);
@@ -83,22 +87,25 @@ public static class DamageMultiplierRules
         victimKind switch
         {
             DamageVictimKind.Npc => SelectByDamageType(
-                damageType, attackerMultipliers.MeleeAntiNpc, attackerMultipliers.RangedAntiNpc, attackerMultipliers.SpellAntiNpc),
+                damageType, attackerMultipliers.MeleeAntiNpc, attackerMultipliers.RangedAntiNpc,
+                attackerMultipliers.SpellAntiNpc, attackerMultipliers.HealAntiNpc),
             DamageVictimKind.Player => SelectByDamageType(
-                damageType, attackerMultipliers.MeleeAntiPc, attackerMultipliers.RangedAntiPc, attackerMultipliers.SpellAntiPc),
+                damageType, attackerMultipliers.MeleeAntiPc, attackerMultipliers.RangedAntiPc,
+                attackerMultipliers.SpellAntiPc, attackerMultipliers.SpellAntiPc),
             _ => 1.0f
         };
 
     /// <summary>
-    /// Siege has no anti-kind attribute in the 10.0.2.13 table, and <see cref="DamageType.Heal"/> is not
-    /// a damage type; both keep the neutral factor the existing DamageEffect switch gives them.
+    /// Siege has no anti-kind attribute in the 10.0.2.13 table. Healing damage has an anti-NPC
+    /// attribute but no anti-PC attribute; the caller supplies the spell anti-PC factor as its fallback.
     /// </summary>
-    private static float SelectByDamageType(DamageType damageType, float melee, float ranged, float spell) =>
+    private static float SelectByDamageType(DamageType damageType, float melee, float ranged, float spell, float heal) =>
         damageType switch
         {
             DamageType.Melee => melee,
             DamageType.Ranged => ranged,
             DamageType.Magic => spell,
+            DamageType.Heal => heal,
             _ => 1.0f
         };
 }

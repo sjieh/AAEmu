@@ -19,7 +19,11 @@ public class CharacterSkills(Character owner)
         Buff = 2
     }
 
+    // Tracks the initial skill-loading phase.
+    private bool _loadingSkills;
     private readonly List<uint> _removed = [];
+    private readonly object _comboFollowUpsLock = new();
+    private readonly Dictionary<uint, DateTime> _comboFollowUps = [];
     public Dictionary<uint, Skill> Skills { get; } = [];
     public Dictionary<uint, PassiveBuff> PassiveBuffs { get; } = [];
     private Character Owner { get; } = owner;
@@ -90,6 +94,10 @@ public class CharacterSkills(Character owner)
 
         if (packet)
             Owner.SendPacket(new SCSkillLearnedPacket(skill));
+
+        // Check for newly unlocked passives after learning a skill.
+        if (!_loadingSkills)
+            GrantUnlockedTreePassives(notify: packet);
     }
 
     /// <summary>
@@ -97,8 +105,8 @@ public class CharacterSkills(Character owner)
     /// </summary>
     /// <param name="buffId"></param>
     /// <param name="notify">
-    /// When true, broadcasts <c>SCBuffLearned</c> (client chat "Learned …"). Use false for
-    /// skillsaver snapshot restore — the client rebuilds passives from AllInfo / AbilitySetUpdated.
+    /// When true, broadcasts <c>SCBuffLearned</c> (client chat "Learned …"). Use false when
+    /// restoring a skillsaver snapshot; the client rebuilds passives from AllInfo / AbilitySetUpdated.
     /// </param>
     public void AddBuff(uint buffId, bool notify = true)
     {
@@ -127,7 +135,7 @@ public class CharacterSkills(Character owner)
         // Deduct the amount of skill points already used
         points -= GetUsedSkillPoints(AbilityType.General);
 
-        // Check if we have enough remaining (passive_buffs.skill_points — often 0 for early passives)
+        // Check whether enough points remain (passive_buffs.skill_points; often 0 for early passives).
         if (template.SkillPoints > points)
             return;
 
@@ -156,8 +164,8 @@ public class CharacterSkills(Character owner)
     /// <c>Character.ApplyLevelUpBenefits</c> used to refresh HP/MP and nothing else, so a passive's
     /// bonuses stayed at the ability level they were first applied with (the <c>Buff.AbLevel</c> default
     /// of 1) for the whole life of the character. A rebuild is a remove plus an apply because the bonus
-    /// values are snapshotted in <c>BuffTemplate.Start</c>; both halves are packet-silent for a passive —
-    /// <c>Start</c> and <c>Dispel</c> only broadcast for a non-passive — so the client is not disturbed.
+    /// Values are snapshotted in <c>BuffTemplate.Start</c>. Neither half sends packets for a passive:
+    /// <c>Start</c> and <c>Dispel</c> broadcast only for non-passives, so the client is not disturbed.
     /// </remarks>
     public void ReevaluatePassivesOnLevelUp()
     {
@@ -171,13 +179,25 @@ public class CharacterSkills(Character owner)
 
         foreach (var passiveId in SkillManager.Instance.GetAutoGrantablePassiveBuffIds(Owner.Level, PassiveBuffs.Keys))
             AddBuff(passiveId, notify: false);
+        // Check ability-branch passives after the character levels up.
+        GrantUnlockedTreePassives(notify: false);
     }
 
+    // Automatically grant passives unlocked by reaching
+    // the required number of points in an ability branch.
+    private void GrantUnlockedTreePassives(bool notify = true)
+    {
+        foreach (var passiveId in SkillManager.Instance
+            .GetPointUnlockedPassiveBuffIds(Owner.Level, PassiveBuffs.Keys))
+        {
+            AddBuff(passiveId, notify);
+        }
+    }
     /// <summary>
     /// Re-send every learned skill/passive to this character. Needed after <c>SCAbilitySwapped</c>
     /// when the client wiped trees and there is no <c>SCAbilitySetUpdated(Changed)</c> path to
     /// restore them from a saved set (e.g. NPC <see cref="CharacterAbilities.Swap"/>).
-    /// Each <c>SCSkillLearned</c> raises chat <c>SKILL_LEARNED</c> — do not use on skillsaver activate.
+    /// Each <c>SCSkillLearned</c> raises the <c>SKILL_LEARNED</c> chat message; do not use this on skillsaver activation.
     /// Temporary grants are re-sent too: the client has just wiped the same list they were added to.
     /// </summary>
     public void ResendLearnedToOwner()
@@ -185,9 +205,8 @@ public class CharacterSkills(Character owner)
         foreach (var skill in Skills.Values)
             if (!ReplacedSkillIds.Contains(skill.Id))
                 Owner.SendPacket(new SCSkillLearnedPacket(skill));
-        foreach (var skill in TemporarySkills.Values)
-            if (!ReplacedSkillIds.Contains(skill.Id))
-                Owner.SendPacket(new SCSkillLearnedPacket(skill));
+        // Temporary grants are deliberately not re-sent here: they are never announced as learned in
+        // the first place (see AddTemporarySkill), and the client rebuilds them from the buffs it is sent.
         foreach (var buff in PassiveBuffs.Values)
             Owner.SendPacket(new SCBuffLearnedPacket(Owner.ObjId, buff.Id));
     }
@@ -199,15 +218,17 @@ public class CharacterSkills(Character owner)
     /// <c>buff_mount_skills</c>, and the replacement side of <c>buff_swap_skills</c>).
     /// </summary>
     /// <remarks>
-    /// Deliberately a separate dictionary from <see cref="Skills"/>: that one is the saved skill list —
-    /// <see cref="Save"/> writes exactly its members and <see cref="Load"/> reads them back — so keeping
+    /// Deliberately separate from <see cref="Skills"/>, which is the saved skill list.
+    /// <see cref="Save"/> writes exactly its members and <see cref="Load"/> reads them back, so keeping
     /// temporary grants out of it is what stops a buff-granted skill from becoming a learned one on the
-    /// next logout, and stops it from eating skill points while it is up.
+    /// next logout, and stops it from eating skill points while it is up. They are also kept out of what
+    /// the client is told, because the client's own skill-point counter charges every id it is handed as
+    /// learned; see <see cref="LiveSkillIds"/> and <see cref="AddTemporarySkill"/>.
     /// </remarks>
     public Dictionary<uint, Skill> TemporarySkills { get; } = [];
 
     /// <summary>
-    /// Learned skills a live <c>buff_swap_skills</c> row has taken off the bar. The skill stays learned —
+    /// Learned skills that an active <c>buff_swap_skills</c> row has removed from the bar. The skill stays learned;
     /// only the list the client is shown drops it, and it comes back when the swap ends.
     /// </summary>
     public HashSet<uint> ReplacedSkillIds { get; } = [];
@@ -234,8 +255,8 @@ public class CharacterSkills(Character owner)
 
     /// <summary>
     /// Drops what <paramref name="buff"/> granted and reconciles the rest. Called from
-    /// <c>BuffTemplate.Dispel</c>, i.e. on every way a buff can end — dispel, timeout, removal, death —
-    /// and twice on the <c>Buffs.RemoveBuff</c> path, which is why an unknown buff is simply ignored.
+    /// <c>BuffTemplate.Dispel</c> is called for every way a buff can end: dispel, timeout, removal, or death.
+    /// It is also called twice on the <c>Buffs.RemoveBuff</c> path, which is why an unknown buff is simply ignored.
     /// </summary>
     public void RevokeBuffGrants(Buff buff)
     {
@@ -245,16 +266,23 @@ public class CharacterSkills(Character owner)
         ReconcileBuffGrants();
     }
 
-    /// <summary>Skill ids the client is shown for this character: learned skills plus temporary grants,
-    /// minus the entries a live swap has replaced. This is the list <c>SCUnitState</c> carries.</summary>
+    /// <summary>
+    /// Skill ids the client is shown as learned for this character, minus the entries a live swap has
+    /// replaced. This is the list <c>SCUnitState</c> carries.
+    /// </summary>
+    /// <remarks>
+    /// Learned skills only. A buff-granted skill must stay out of it: the client derives those from
+    /// <c>buff_skills</c> / <c>buff_swap_skills</c> as soon as it is sent the buff (its own compact DB
+    /// carries 2,316 + 71 + 849 rows of them), and every id that enters this list is one the client
+    /// treats as learned — which it then charges <c>skills.skill_points</c> for. The glider buffs are
+    /// the loudest case: 3530 alone hands out seven skills at one point each, so listing them turned a
+    /// spent skill-point pool negative while the character was gliding.
+    /// </remarks>
     public IReadOnlyList<uint> LiveSkillIds()
     {
         var ids = new List<uint>();
         var seen = new HashSet<uint>();
         foreach (var skill in Skills.Values)
-            if (!ReplacedSkillIds.Contains(skill.Id) && seen.Add(skill.Id))
-                ids.Add(skill.Id);
-        foreach (var skill in TemporarySkills.Values)
             if (!ReplacedSkillIds.Contains(skill.Id) && seen.Add(skill.Id))
                 ids.Add(skill.Id);
         return ids;
@@ -263,6 +291,35 @@ public class CharacterSkills(Character owner)
     /// <summary>Whether the character holds <paramref name="skillId"/>, learned or granted.</summary>
     public bool HasSkill(uint skillId) =>
         Skills.ContainsKey(skillId) || TemporarySkills.ContainsKey(skillId);
+
+    /// <summary>Opens a data-defined window in which a combo-linked follow-up may be cast.</summary>
+    public void OpenComboFollowUp(uint skillId, int windowMilliseconds)
+    {
+        if (skillId == 0 || windowMilliseconds <= 0)
+            return;
+
+        lock (_comboFollowUpsLock)
+            _comboFollowUps[skillId] = DateTime.UtcNow.AddMilliseconds(windowMilliseconds);
+    }
+
+    /// <summary>Whether <paramref name="skillId"/> is an unexpired combo follow-up.</summary>
+    public bool HasActiveComboFollowUp(uint skillId)
+    {
+        var now = DateTime.UtcNow;
+        lock (_comboFollowUpsLock)
+        {
+            foreach (var expired in _comboFollowUps.Where(entry => entry.Value <= now).Select(entry => entry.Key).ToList())
+                _comboFollowUps.Remove(expired);
+            return _comboFollowUps.TryGetValue(skillId, out var expiresAt) && expiresAt > now;
+        }
+    }
+
+    /// <summary>Ends the previous combo window when a new cast starts.</summary>
+    public void ClearComboFollowUps()
+    {
+        lock (_comboFollowUpsLock)
+            _comboFollowUps.Clear();
+    }
 
     private void ReconcileBuffGrants()
     {
@@ -303,16 +360,18 @@ public class CharacterSkills(Character owner)
 
         // buff_skills carries no level, so a grant sits at level 1 for as long as it lasts.
         var skill = new Skill { Id = template.Id, Template = template, Level = 1 };
-        if (!TemporarySkills.TryAdd(skillId, skill))
-            return;
+        TemporarySkills.TryAdd(skillId, skill);
 
-        // A passive buff applies during character load, before the client is in the world —
-        // Character.Connection is set on character select — and the grant goes out with the login skill
-        // list (SCUnitState) instead. This is the same reason BuffTemplate.Start skips SCBuffCreated for
-        // passives. SCSkillLearned is the packet the learn path (and CharacterSkills.ResendLearnedToOwner)
-        // already uses for a skill the character has: 10.0.2.13 reads the single skill id it writes.
-        if (Owner.Connection != null)
-            Owner.SendPacket(new SCSkillLearnedPacket(skill));
+        // No SCSkillLearned here. That packet is the client's "this character learned skill X" and it
+        // charges skills.skill_points for it against the character's pool — the server never sends
+        // skill points of its own (SCCharacterState writes additionalSkillPoint 0 and
+        // SCUpdateAdditionalSkillPoint is only ever sent empty), so the client computes
+        // levels.skill_points(level) minus the cost of everything it believes was learned. Announcing a
+        // grant that way is what drained the pool: the gliding buffs alone hand out 17657 + 13435 +
+        // 13440 + 14236 + 19331 + 19167 + 24113, one point each, and a character whose points were
+        // already spent went negative for as long as the glider was out. SCBuffCreated already carries
+        // the buff, and the client has the buff_skills / buff_swap_skills tables locally to build the
+        // bar entries from it — so nothing is lost by staying quiet here.
     }
 
     private void ReconcileGrantedPassives(List<BuffGrantSet> holders)
@@ -388,21 +447,15 @@ public class CharacterSkills(Character owner)
     /// <param name="ability">Ability whose Skill Tree to check. Use AbilityType.General if you want the total for all learned skills</param>
     /// <returns>Number of skill points invested</returns>
     private int GetUsedSkillPoints(AbilityType ability)
-    {
-        var points = 0;
+{
+    var points = 0;
 
-        // Count points for Active Skills
-        foreach (var skill in Skills.Values)
-            if (ability == AbilityType.General || skill.Template.AbilityId == ability)
-                points += skill.Template.SkillPoints;
+    foreach (var skill in Skills.Values)
+        if (ability == AbilityType.General || skill.Template.AbilityId == ability)
+            points += skill.Template.SkillPoints;
 
-        // Passives use their own skill_points column (client-matching); many early ones cost 0.
-        foreach (var buff in PassiveBuffs.Values)
-            if (ability == AbilityType.General || buff.Template.AbilityId == ability)
-                points += buff.Template?.SkillPoints ?? 0;
-
-        return points;
-    }
+    return points;
+}
 
     /// <summary>
     /// A successor is castable only when the character selected that exact content-defined Heir
@@ -414,6 +467,8 @@ public class CharacterSkills(Character owner)
     #region database
     public void Load(MySqlConnection connection)
     {
+        // Begin the initial skill load.
+        _loadingSkills = true;
         using (var command = connection.CreateCommand())
         {
             command.CommandText = "SELECT * FROM skills WHERE `owner` = @owner";
@@ -453,6 +508,10 @@ public class CharacterSkills(Character owner)
         foreach (var skill in Skills.Values)
             if (skill != null)
                 skill.Template = SkillManager.Instance.GetSkillTemplate(skill.Id);
+
+        // Initial load is complete; grant any newly unlocked passives.
+        _loadingSkills = false;
+        GrantUnlockedTreePassives(notify: false);
     }
 
     public void Save(MySqlConnection connection, MySqlTransaction transaction)

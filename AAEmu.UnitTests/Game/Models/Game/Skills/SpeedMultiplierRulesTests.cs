@@ -3,15 +3,12 @@ using AAEmu.Game.Models.Game.Skills;
 namespace AAEmu.UnitTests.Game.Models.Game.Skills;
 
 /// <summary>
-/// The attack-speed ratings — <c>attack_speed_mul</c> (218) and the melee/ranged/animation views 54/55/119 —
-/// as the factor an attack interval is multiplied by.
+/// Speed rating conversion for attack intervals and animation timing.
 /// </summary>
 /// <remarks>
-/// The load-bearing property is that the arithmetic is the one <c>Character.GlobalCooldownMul</c> already
-/// applies to <c>global_cooldown_mul</c> (74): the 377 rows where 54/55/119 store the same value as 74 have
-/// to come out at the same factor, or consuming them would silently rescale every weapon swing in the game.
-/// The factors below are compared within a hair of a percent because they pass through the same float
-/// division the existing getter uses, not to hide a difference.
+/// The interval factor matches the legacy <c>Character.GlobalCooldownMul</c> arithmetic. Shared skill GCD and
+/// general attack-speed animation timing use the continuous rate so the client-displayed percentage is
+/// preserved.
 /// </remarks>
 public class SpeedMultiplierRulesTests
 {
@@ -67,10 +64,9 @@ public class SpeedMultiplierRulesTests
     }
 
     [Test]
-    public async Task AttackIntervalFactor_HasAttackSpeedWinOverThePerTypeView()
+    public async Task AttackIntervalFactor_HasGeneralRatingWinOverThePerTypeView()
     {
-        // Only three buff rows carry 218 next to 54/55 and four next to 74, so the two are never meant to
-        // compound; the newer general rating wins.
+        // Generic selection prefers 218 and does not compound it with the per-type rating.
         await Assert.That(SpeedMultiplierRules.AttackIntervalFactor(1000, 500, 1.0)).IsEqualTo(0.5).Within(Epsilon);
         await Assert.That(SpeedMultiplierRules.AttackIntervalFactor(0, 500, 1.0)).IsEqualTo(0.66).Within(Epsilon);
     }

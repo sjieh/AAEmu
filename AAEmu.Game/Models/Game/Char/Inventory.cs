@@ -1218,7 +1218,7 @@ public class Inventory
             Logger.Warn($"SendFragmentedInventory: Inventory Size Mismatch; expected {numItems} got {bag.Length}");
 
         /*
-         * указывает, сколько предметов должно быть в пакете
+         * Specifies how many items should be in the package.
          * indicates how many items should be in the package
          * numChunks = 1 -> 10 for 1.2
          * numChunks = 5 -> 50 for 3+

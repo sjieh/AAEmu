@@ -27,12 +27,12 @@ public class SkillUse : SpecialEffectAction
 
         if (Random.Shared.Next(0, 100) > chance && chance != 0)
         {
-            ((Unit)caster).ConditionChance = false;
+            caster.ConditionChance = false;
             return;
         }
         else
         {
-            ((Unit)caster).ConditionChance = true;
+            caster.ConditionChance = true;
         }
 
         //target = ((Unit)caster).CurrentTarget;

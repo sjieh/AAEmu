@@ -427,12 +427,12 @@ public class Transfer : Unit
     }
 
     // ******************************************************************************************************************
-    // Организуем движение транспорта / Transport movement information
+    // Transport movement information.
     // ******************************************************************************************************************
 
-    public Dictionary<int, List<WorldSpawnPosition>> Routes { get; set; } = []; // Steering, TransferPath - список всех участков дороги
-    public List<WorldSpawnPosition> TransferPath { get; set; } = []; // текущий участок дороги
-    public bool MoveToPathEnabled { get; set; }    // разрешено движение транспорта
+    public Dictionary<int, List<WorldSpawnPosition>> Routes { get; set; } = []; // Steering/TransferPath: all road segments.
+    public List<WorldSpawnPosition> TransferPath { get; set; } = []; // Current road segment.
+    public bool MoveToPathEnabled { get; set; }    // Whether transport movement is enabled.
     public bool MoveToForward { get; set; }        // movement direction true -> forward, true -> back
     public int MoveStepIndex { get; set; }         // current checkpoint (where are we running now)
     //public float DeltaTime { get; set; } = 0.1f;
@@ -456,7 +456,7 @@ public class Transfer : Unit
 
         transfer.MoveToPathEnabled = true;
         transfer.MoveToForward = true;
-        // попробуем взять эти значения как скорость движения транспорта
+        // Try using these values as the transport movement speed.
         // let's try to take these values as vehicle speed
         transfer.MaxVelocityForward = transfer.Template.PathSmoothing + 1.6f;
         transfer.Speed = 0;
@@ -486,7 +486,7 @@ public class Transfer : Unit
         //Logger.Warn("x:=" + vPosition.X + " y:=" + vPosition.Y + " z:=" + vPosition.Z);
         var s = transfer.TransferPath[transfer.MoveStepIndex];
         transfer.vTarget = new Vector3(s.X, s.Y, s.Z);
-        // 1.начало пути
+        // 1. Start of the route.
         if (MoveStepIndex == 0 && Steering == 0 && transfer.Template.WaitTime > 0)
         {
             var time = transfer.Template.WaitTime;
@@ -518,7 +518,7 @@ public class Transfer : Unit
             //Logger.Warn("#" + i + " x:=" + vPosition.X + " y:=" + vPosition.Y + " z:=" + vPosition.Z);
 
             delta = MathUtil.GetDistance(transfer.vTarget, transfer.vPosition);
-            if (delta > 200) { continue; } // ищем точку не очень далеко от повозки // looking for a point not very far from the carriage 
+            if (delta > 200) { continue; } // Find a point that is not too far from the carriage.
 
             if (index == -1) // first assignment
             {
@@ -560,7 +560,7 @@ public class Transfer : Unit
     /// <param name="transfer"></param>
     public void MoveTo(Transfer transfer)
     {
-        if (transfer.TimeLeft > 0) { return; } // Пауза в начале/конце пути и на остановках
+        if (transfer.TimeLeft > 0) { return; } // Pause at the beginning/end of a route and at stops.
 
         if (!transfer.MoveToPathEnabled || !transfer.IsInPatrol)
         {
@@ -568,7 +568,7 @@ public class Transfer : Unit
             return;
         }
 
-        /* Поведение Seek (поиск) */
+        /* Seek behavior */
         /* Behaviors: Seek */
         // https://code.tutsplus.com/understanding-steering-behaviors-flee-and-arrival--gamedev-1303t?_ga=2.235770881.1818027478.1708218508-301354123.1708218508
         // Most transfer models have no vehicle_models row — carriage 654, airship 657 and lift 2094
@@ -583,7 +583,7 @@ public class Transfer : Unit
         MaxVelocityForward = transfer.Template.Velocity;
         MaxForce = vehicleModel?.AngVel ?? DefaultAngularVelocity;
         Mass = vehicleModel?.WheeledVehicleMass ?? DefaultMass;
-        //var slowingRadius = transfer.Template.PathSmoothing; // расстояние с которого начинаем тормозить
+        //var slowingRadius = transfer.Template.PathSmoothing; // Distance at which deceleration begins.
 
         // vehicleModel is null for every transfer model without a vehicle_models row, which is most
         // of them — fall through to the default gear ratio rather than dereferencing it.
@@ -595,7 +595,7 @@ public class Transfer : Unit
             _ => 0.3f
         };
 
-        // вектор направление на таргет (последовательность аргументов важно, чтобы смотреть на таргет)
+        // Direction vector to the target (argument order matters for facing the target).
         // vector direction to the target (the sequence of arguments is important to look at the target)
         transfer.vDistance = transfer.vTarget - transfer.vPosition;
 
@@ -618,7 +618,7 @@ public class Transfer : Unit
         transfer.vVelocity = Truncate(transfer.vVelocity + steering, MaxVelocityForward);
         transfer.vPosition += transfer.vVelocity;
 
-        // следующие вычисления Speed, Velocity and AngVel дают вращаться колесам и пропеллерам на дирижаблях
+        // The following Speed, Velocity, and AngVel calculations rotate wheels and airship propellers.
         // the following calculations Speed, Velocity and AngVel allow the wheels and propellers on airships to rotate
         transfer.Speed = MaxVelocityForward;
         transfer.Velocity = transfer.vVelocity * 5;
@@ -627,7 +627,7 @@ public class Transfer : Unit
         if (transfer.Reverse)
         {
             transfer.Angle += MathF.PI;
-            //transfer.velAccel = vehicleModel.WheeledVehicleGearSpeedRatioReverse; // задний ход
+            //transfer.velAccel = vehicleModel.WheeledVehicleGearSpeedRatioReverse; // Reverse gear.
             transfer.AngVel = new Vector3(MaxVelocityForward, 0, 0);
         }
         else
@@ -704,30 +704,30 @@ public class Transfer : Unit
             //Logger.Warn("path #" + Steering);
             //Logger.Warn("walk to #" + MoveStepIndex);
             //Logger.Warn("x:=" + vPosition.X + " y:=" + vPosition.Y + " z:=" + vPosition.Z);
-            // Проходим по очереди все участки пути из списка, с начала каждого пути
+            // Iterate through each route segment in order, starting at the beginning of each one.
             if (transfer.MoveStepIndex >= transfer.TransferPath.Count - 1)
             {
-                // точки участка пути закончились
+                // This route segment has ended.
                 transfer.MoveStepIndex = 0;
                 if (transfer.Steering >= transfer.Routes.Count - 1)
                 {
-                    // закончились все участки пути дороги, нужно начать сначала
+                    // All road segments have ended; start over.
                     //Logger.Warn("we are at the end point.");
-                    transfer.Steering = 0; // укажем на начальный путь
+                    transfer.Steering = 0; // Select the first route segment.
                     transfer.TransferPath = transfer.Routes[transfer.Steering];
                     var s = transfer.TransferPath[transfer.MoveStepIndex];
                     transfer.vTarget = new Vector3(s.X, s.Y, s.Z);
                 }
                 else
                 {
-                    // Проверяем остановки на маршруте
+                    // Check for stops along the route.
                     //Logger.Warn("we reached checkpoint go further...");
-                    // продолжим путь
-                    transfer.Steering++; // укажем на следующий участок пути
+                    // Continue along the route.
+                    transfer.Steering++; // Select the next route segment.
                     transfer.TransferPath = transfer.Routes[transfer.Steering];
                     var s = transfer.TransferPath[transfer.MoveStepIndex];
                     transfer.vTarget = new Vector3(s.X, s.Y, s.Z);
-                    // здесь будет пауза в конце участка пути, если она есть в базе данных
+                    // Pause here at the end of the segment if the database defines one.
                     if (transfer.Steering != 0 && (transfer.Template.TransferAllPaths[transfer.Steering - 1].WaitTimeEnd > 0 || transfer.Template.TransferAllPaths[Steering].WaitTimeStart > 0))
                     {
                         time = transfer.Template.TransferAllPaths[transfer.Steering - 1].WaitTimeEnd > 0
@@ -740,7 +740,7 @@ public class Transfer : Unit
             }
             else
             {
-                // здесь будет пауза в начале участка пути, если она есть в базе данных
+                // Pause here at the start of the segment if the database defines one.
                 if (transfer.MoveStepIndex == 0 && transfer.Steering == 0 && (transfer.Template.TransferAllPaths[transfer.Steering].WaitTimeStart > 0 || transfer.Template.WaitTime > 0))
                 {
                     time = transfer.Template.TransferAllPaths[transfer.Steering].WaitTimeStart > 0
@@ -750,7 +750,7 @@ public class Transfer : Unit
                     StopMove(transfer);
                 }
 
-                // путь еще не закончился, продолжаем движение
+                // The route is not finished; keep moving.
                 transfer.MoveStepIndex++;
                 var s = transfer.TransferPath[transfer.MoveStepIndex];
                 transfer.vTarget = new Vector3(s.X, s.Y, s.Z);
@@ -758,28 +758,28 @@ public class Transfer : Unit
         }
         else
         {
-            // всего один участок, двигаемся сначала вперед, затем назад
-            transfer.Steering = 0; // всегда 0
+            // There is only one segment; travel forward first, then backward.
+            transfer.Steering = 0; // Always zero for a single segment.
             //var s = TransferPath[MoveStepIndex];
             // vTarget = new Vector3(s.X, s.Y, s.Z);
-            // закончились все участки пути дороги, нужно возвращаться назад
+            // The full route has ended; return in the opposite direction.
             if (transfer.MoveStepIndex >= transfer.TransferPath.Count - 1)
             {
                 //Logger.Warn("we are at the end point.");
                 transfer.Reverse = true;
-                // здесь будет пауза в начале участка пути
+                // Pause here at the start of the segment.
                 time = transfer.Template.TransferAllPaths[transfer.Steering].WaitTimeStart > 0
                     ? transfer.Template.TransferAllPaths[transfer.Steering].WaitTimeStart
                     : transfer.Template.WaitTime;
                 transfer.WaitTime = DateTime.UtcNow.AddSeconds(time);
                 StopMove(transfer);
             }
-            // начальная точка, двигаемся вперед
+            // At the starting point, move forward.
             if (transfer.MoveStepIndex == 0)
             {
                 //Logger.Warn("we are at the begin point.");
                 transfer.Reverse = false;
-                // здесь будет пауза в конце участка пути
+                // Pause here at the end of the segment.
                 time = transfer.Template.TransferAllPaths[transfer.Steering].WaitTimeEnd > 0
                     ? transfer.Template.TransferAllPaths[transfer.Steering].WaitTimeEnd
                     : transfer.Template.TransferAllPaths[transfer.Steering].WaitTimeStart;
@@ -788,7 +788,7 @@ public class Transfer : Unit
 
             if (transfer.Reverse)
             {
-                // двигаемся назад по тому же пути
+                // Move backward along the same route.
                 transfer.MoveStepIndex--;
                 //TransferPath = Routes[Steering];
                 var s = transfer.TransferPath[transfer.MoveStepIndex];
@@ -796,7 +796,7 @@ public class Transfer : Unit
             }
             else
             {
-                // продолжим путь
+                // Continue along the route.
                 transfer.MoveStepIndex++;
                 //TransferPath = Routes[Steering];
                 var s = transfer.TransferPath[transfer.MoveStepIndex];

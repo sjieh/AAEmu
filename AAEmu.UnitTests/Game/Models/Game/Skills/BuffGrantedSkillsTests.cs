@@ -245,12 +245,14 @@ public class BuffGrantedSkillsTests
         await Assert.That(character.Skills.Skills.ContainsKey(LearnedSkillId)).IsTrue();
         await Assert.That(character.Skills.TemporarySkills.Keys).IsEquivalentTo(new[] { HarpoonLandingSkillId });
         await Assert.That(character.Skills.LiveSkillIds()).Contains(LearnedSkillId);
-        await Assert.That(character.Skills.LiveSkillIds()).Contains(HarpoonLandingSkillId);
+        // The grant is not announced as learned: the client charges skills.skill_points for every id it
+        // is handed that way, and it rebuilds the entry from the buff it was sent.
+        await Assert.That(character.Skills.LiveSkillIds()).DoesNotContain(HarpoonLandingSkillId);
         await Assert.That(character.Skills.LiveSkillIds()).DoesNotContain(FoldGliderSkillId);
     }
 
     [Test]
-    public async Task Swap_TakesTheOriginOffTheClientList_AndRestoresItOnEnd()
+    public async Task Swap_HidesTheOriginFromTheClientList_AndRestoresItOnEnd()
     {
         var character = CreateCharacter();
         character.Skills.AddSkill(new SkillTemplate { Id = StanceOriginSkillId }, 1, packet: false);
@@ -258,12 +260,15 @@ public class BuffGrantedSkillsTests
 
         character.Buffs.AddBuff(buff);
 
-        await Assert.That(character.Skills.LiveSkillIds()).Contains(FireballStanceSkillId);
+        // The replacement is a buff grant like any other, so it is not announced as learned either; the
+        // client takes the action-bar entry over from buff_swap_skills when the buff arrives.
+        await Assert.That(character.Skills.LiveSkillIds()).DoesNotContain(FireballStanceSkillId);
         await Assert.That(character.Skills.LiveSkillIds()).DoesNotContain(StanceOriginSkillId);
         await Assert.That(character.Skills.ReplacedSkillIds).Contains(StanceOriginSkillId);
         // The swap hides the learned skill; it does not unlearn it.
         await Assert.That(character.Skills.Skills.ContainsKey(StanceOriginSkillId)).IsTrue();
         await Assert.That(character.Skills.TemporarySkills.ContainsKey(StanceOriginSkillId)).IsFalse();
+        await Assert.That(character.Skills.TemporarySkills.ContainsKey(FireballStanceSkillId)).IsTrue();
 
         buff.Exit();
 
@@ -284,14 +289,13 @@ public class BuffGrantedSkillsTests
         character.Buffs.AddBuff(high);
 
         // 폭탄 발사 준비 is replaced by one skill at a time: the priority-1 row owns the entry.
-        await Assert.That(character.Skills.LiveSkillIds()).Contains(FrostStanceSkillId);
-        await Assert.That(character.Skills.LiveSkillIds()).DoesNotContain(FireballStanceSkillId);
+        await Assert.That(character.Skills.TemporarySkills.Keys).IsEquivalentTo(new[] { FrostStanceSkillId });
+        await Assert.That(character.Skills.ReplacedSkillIds).Contains(StanceOriginSkillId);
 
         high.Exit();
 
-        await Assert.That(character.Skills.LiveSkillIds()).Contains(FireballStanceSkillId);
-        await Assert.That(character.Skills.LiveSkillIds()).DoesNotContain(FrostStanceSkillId);
-        await Assert.That(character.Skills.LiveSkillIds()).DoesNotContain(StanceOriginSkillId);
+        await Assert.That(character.Skills.TemporarySkills.Keys).IsEquivalentTo(new[] { FireballStanceSkillId });
+        await Assert.That(character.Skills.ReplacedSkillIds).Contains(StanceOriginSkillId);
 
         low.Exit();
 
@@ -333,15 +337,16 @@ public class BuffGrantedSkillsTests
     }
 
     [Test]
-    public async Task TemporaryGrant_IsLiveForTheClientButNotInTheSavedSkillList()
+    public async Task TemporaryGrant_IsCastableButNotAnnouncedAsLearned()
     {
         var character = CreateCharacter();
         character.Buffs.AddBuff(CreateBuff(character, GliderBuffId));
 
-        // Live: the login skill list (SCUnitState) carries it and a cast is accepted.
-        await Assert.That(character.Skills.LiveSkillIds()).Contains(FoldGliderSkillId);
+        // Castable: a grant is a skill the character holds for as long as the buff is up.
         await Assert.That(character.Skills.HasSkill(FoldGliderSkillId)).IsTrue();
-        // Not saved: CharacterSkills.Save writes Skills, and the grant never enters it.
+        // Not learned: nothing announces it as learned, so the client never charges its skill_points for
+        // it and the character keeps the points. This is what the glider buffs used to break.
+        await Assert.That(character.Skills.LiveSkillIds()).DoesNotContain(FoldGliderSkillId);
         await Assert.That(character.Skills.Skills.ContainsKey(FoldGliderSkillId)).IsFalse();
     }
 
@@ -388,7 +393,7 @@ public class BuffGrantedSkillsTests
     }
 
     [Test]
-    public async Task Grant_SendsSkillLearned_AndTheBuffRemovalIsWhatEndsIt()
+    public async Task Grant_SendsNothingSkillLearned_AndTheBuffRemovalIsWhatEndsIt()
     {
         var character = CreateCharacter();
         AttachConnection(character);
@@ -396,15 +401,16 @@ public class BuffGrantedSkillsTests
 
         character.Buffs.AddBuff(buff);
 
+        // Nothing announces the grant as learned. SCSkillLearned is not a "temporary" packet to the
+        // client: it files the id as learned and charges skills.skill_points against the character's
+        // pool, which is never un-charged (there is no unlearn opcode). The client builds the bar entry
+        // from the SCBuffCreated it is sent, using its own buff_skills rows.
         var learned = _sentPackets.Where(packet => Opcode(packet) == SCOffsets.SCSkillLearnedPacket).ToList();
-        await Assert.That(learned).HasCount().EqualTo(1);
-        await Assert.That(FirstUInt32(learned[0])).IsEqualTo(FoldGliderSkillId);
+        await Assert.That(learned).IsEmpty();
 
         _sentPackets.Clear();
         buff.Exit();
 
-        // There is no "unlearn" opcode in SCOffsets; the client is told the buff is gone (0x0EC) and its
-        // own buff/skill data drops the entry. The server state is what this PR is responsible for.
         await Assert.That(_sentPackets.Any(packet => Opcode(packet) == SCOffsets.SCSkillLearnedPacket)).IsFalse();
         await Assert.That(_sentPackets.Any(packet => Opcode(packet) == SCOffsets.SCBuffRemovedPacket)).IsTrue();
         await Assert.That(character.Skills.TemporarySkills).IsEmpty();
@@ -413,13 +419,14 @@ public class BuffGrantedSkillsTests
     [Test]
     public async Task Grant_BeforeTheClientIsInTheWorld_SendsNothing()
     {
-        // Character.Connection is set on character select, and passive buffs are applied at load: the
-        // grant reaches the client through the login skill list instead.
+        // Character.Connection is set on character select and passive buffs are applied at load, so a
+        // grant must not depend on the connection to reach the client at all.
         var character = CreateCharacter();
         character.Buffs.AddBuff(CreateBuff(character, GliderBuffId));
 
         await Assert.That(_sentPackets).IsEmpty();
-        await Assert.That(character.Skills.LiveSkillIds()).Contains(FoldGliderSkillId);
+        await Assert.That(character.Skills.LiveSkillIds()).DoesNotContain(FoldGliderSkillId);
+        await Assert.That(character.Skills.HasSkill(FoldGliderSkillId)).IsTrue();
     }
 
     private static Character CreateCharacter(uint id = 1)
@@ -455,9 +462,6 @@ public class BuffGrantedSkillsTests
     /// EncryptionActive is false, which is the state a test connection is in.
     /// </summary>
     private static ushort Opcode(byte[] packet) => (ushort)(packet[6] | (packet[7] << 8));
-
-    private static uint FirstUInt32(byte[] packet) =>
-        (uint)(packet[8] | (packet[9] << 8) | (packet[10] << 16) | (packet[11] << 24));
 
     private static FieldInfo SingletonField<T>() where T : class =>
         typeof(Singleton<T>).GetField("s_instance", BindingFlags.Static | BindingFlags.NonPublic)!;

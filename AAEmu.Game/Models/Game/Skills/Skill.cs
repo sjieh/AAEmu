@@ -406,6 +406,7 @@ public class Skill
         // skill_reqs: a buff or buff tag on the caster or on the target that forbids or requires the cast
         // (rooted/stunned/fear "cannot use while X", gliding "only while X"). Checked once the target is
         // resolved, because 91 of the 338 rows read the target.
+        // TEMPORARY: Ignore area-peace restrictions while NPC interactions are being investigated.
         if (!SkillRequirementRules.AllowsCast(
                 SkillManager.Instance.GetSkillRequirements(Template.Id),
                 requirement => requirement.BuffId > 0 &&
@@ -414,7 +415,8 @@ public class Skill
                 requirement => requirement.BuffTagId > 0 &&
                                (requirement.OnTarget ? target.Buffs.CheckBuffTag(requirement.BuffTagId)
                                    : caster.Buffs.CheckBuffTag(requirement.BuffTagId)),
-                out var requirementMessage))
+                out var requirementMessage,
+                requirement => SkillRequirementRules.IsAreaPeaceZoneRestriction(requirement)))
         {
             Logger.Trace("Skill {0} blocked by a skill_reqs row for {1}: {2}",
                 Template.Id, caster.Name, requirementMessage);
@@ -435,8 +437,14 @@ public class Skill
             }
         }
 
-        // Check initial mana cost
-        if (ManaCost(unit) > unit.Mp)
+        // Check the cost before starting the cast. When a plot owns the cost, follow its reachable mana
+        // effects so target-dependent branches (for example friendly versus hostile) are checked at the
+        // amount the plot will charge instead of skills.mana_cost.
+        var requiredMana = character != null && Template.Plot?.HasManaCostEffect == true
+            ? Template.Plot.GetRequiredManaCost(
+                new PlotState(caster, casterCaster, target, targetCaster, skillObject, this))
+            : ManaCost(unit);
+        if (requiredMana > unit.Mp)
             return SkillResult.LackMana;
 
         // Labor, before anything is committed. The charge itself stays in EndSkill, which is where the
@@ -559,6 +567,10 @@ public class Skill
             Logger.Info($"{rangeFailure} targetDist={targetDist}, band={band.Min}..{(band.MaxUnbounded ? "unbounded" : band.Max)}, SkillTlId {TlId} for Skill {Template.Id}, Caster {caster.Name} ({caster.TemplateId}:{caster.ObjId}) with target {target.Name} ({target.TemplateId}:{target.ObjId})");
             return rangeFailure.Value;
         }
+
+        // A validated new cast closes the previous combo window. Its own Combo effect will open the
+        // next window when the skill or plot actually applies that effect.
+        character?.Skills.ClearComboFollowUps();
 
         // If skill uses Plots, then start the plot
         if (Template.Plot != null)
@@ -704,7 +716,7 @@ public class Skill
             return null;
 
         var target = caster;
-        if (targetCaster == null || skillCaster == null) // проверяем, так как иногда бывает null
+        if (targetCaster == null || skillCaster == null) // These can occasionally be null.
             return null;
 
         // HACKFIX : Mounts and Turbulence
@@ -868,7 +880,7 @@ public class Skill
 
                     if (target != null && caster.ObjId == target.ObjId)
                     {
-                        return null; //TODO отправлять ошибку?
+                        return null; // TODO: Should an error be sent?
                     }
 
                     break;
@@ -894,14 +906,14 @@ public class Skill
                 {
                     target = SetInitialTarget(caster, targetCaster);
                     if (caster.ObjId == target.ObjId)
-                        return null; //TODO отправлять ошибку?
+                        return null; // TODO: Should an error be sent?
                     break;
                 }
             case SkillTargetType.BallisticPos:
                 {
                     target = SetInitialTarget(caster, targetCaster);
                     if (caster.ObjId == target.ObjId)
-                        return null; //TODO отправлять ошибку?
+                        return null; // TODO: Should an error be sent?
                     break;
                 }
             case SkillTargetType.Party:
@@ -945,7 +957,7 @@ public class Skill
                 {
                     target = SetInitialTarget(caster, targetCaster);
                     if (caster.ObjId == target.ObjId)
-                        return null; //TODO отправлять ошибку?
+                        return null; // TODO: Should an error be sent?
                     break;
                 }
             case SkillTargetType.CursorPos:
@@ -1133,14 +1145,14 @@ public class Skill
 
             // Get a random number (from 0 to n)
             var value = Random.Shared.Next(0, 1);
-            // для skillId = 2 - for skillId = 2
-            // 87 (35) - удар наотмаш, chr - overhead swing, chr
-            // 2 (00) - удар сбоку, NPC - side strike, NPC
-            // 3 (46) - удар сбоку, chr - side strike, chr
-            // 1 (00) - удар похож на 2 удар сбоку, NPC - strike similar to 2, side strike, NPC
-            // 91 - удар сверху (немного справа) - strike from above (slightly from the right)
-            // 92 - удар наотмашь слева вниз направо - swing from left to right downwards
-            // 0 - удар не наносится (расстояние большое и надо подойти поближе), no strike is made (distance is too great and need to get closer) f=1, c=15
+            // For skillId = 2:
+            // 87 (35) - overhead swing, character
+            // 2 (00) - side strike, NPC
+            // 3 (46) - side strike, character
+            // 1 (00) - strike similar to 2, side strike, NPC
+            // 91 - strike from above (slightly from the right)
+            // 92 - swing from left to right, downward
+            // 0 - no strike (distance is too great; move closer), f=1, c=15
             var effectDelay = new Dictionary<int, short> { { 0, 46 }, { 1, 35 } };
             var fireAnimId = new Dictionary<int, int> { { 0, 3 }, { 1, 87 } };
             var effectDelay2 = new Dictionary<int, short> { { 0, 0 }, { 1, 0 } };
@@ -1188,14 +1200,14 @@ public class Skill
         //
         //     // Get a random number (from 0 to n)
         //     var value = Rand.Next(0, 1);
-        //     // для skillId = 2
-        //     // 87 (35) - удар наотмаш, chr
-        //     //  2 (00) - удар сбоку, NPC
-        //     //  3 (46) - удар сбоку, chr
-        //     //  1 (00) - удар похож на 2 удар сбоку, NPC
-        //     // 91 - удар сверху (немного справа)
-        //     // 92 - удар наотмашь слева вниз направо
-        //     //  0 - удар не наносится (расстояние большое и надо подойти поближе), f=1, c=15
+        //     // For skillId = 2:
+        //     // 87 (35) - overhead swing, character
+        //     //  2 (00) - side strike, NPC
+        //     //  3 (46) - side strike, character
+        //     //  1 (00) - strike similar to 2, side strike, NPC
+        //     // 91 - strike from above (slightly from the right)
+        //     // 92 - swing from left to right, downward
+        //     //  0 - no strike (distance is too great; move closer), f=1, c=15
         //     var effectDelay = new Dictionary<int, short> { { 0, 46 }, { 1, 35 } };
         //     var fireAnimId = new Dictionary<int, int> { { 0, 3 }, { 1, 87 } };
         //     var effectDelay2 = new Dictionary<int, short> { { 0, 0 }, { 1, 0 } };
@@ -1373,7 +1385,7 @@ public class Skill
             EndSkill(caster);
         }
 
-        // TODO: добавил, так как для квеста 3469 нет события OnItemUse
+        // TODO: Added because quest 3469 has no OnItemUse event.
         // TODO: added since there is no OnItemUse event for quest 3469 and other quests that require the use on non-consuming items
         if (Cancelled == false && casterCaster is SkillItem { ItemTemplateId: > 0 } item && caster is Character player)
         {
@@ -1428,10 +1440,10 @@ public class Skill
             totalDelay += (int)(unit.GetDistanceTo(target) / Template.EffectSpeed * 1000.0f);
         if (Template.FireAnim != null && Template.UseAnimTime)
         {
-            // attack_anim_speed_mul (119) is the animation's own view of the rating that already paced this
-            // delay through global_cooldown_mul; a unit without one keeps that factor, and a unit with
-            // neither keeps 1.0.
-            var animFactor = SpeedMultiplierRules.AnimationFactor(unit.AttackAnimSpeedRating, unit.GlobalCooldownMul / 100.0);
+            // General attack speed also paces attack animations. Keep the animation-specific 119 rating and
+            // global-cooldown multiplier as fallbacks for content that does not provide attack_speed_mul.
+            var animFactor = SpeedMultiplierRules.AnimationFactor(
+                unit.AttackSpeedRating, unit.AttackAnimSpeedRating, unit.GlobalCooldownMul / 100.0);
             totalDelay += (int)(Template.FireAnim.CombatSyncTime * animFactor);
         }
 
@@ -2787,24 +2799,66 @@ public class Skill
         if (Template.IgnoreGlobalCooldown)
             return;
 
-        if (!SkillCastOverlapRules.ArmsSharedGlobalCooldown(Template.CastingTime, Template.CustomGcd, Template.DefaultGcd))
-            return;
+        var hasWeaponGcd = Template.WeaponGcdId > 0;
+        var usesWeaponSpeedForGcd = hasWeaponGcd || UsesRangedWeaponForGcd;
+        var weaponGcdSlot = GetWeaponGcdEquipmentSlot();
 
-        // Length order of authority is custom_gcd → weapon_gcd_id → default_gcd: see SkillGcdRules.
-        // weapon_gcd_id names a holdables row (15 한손창 1100 ms, 16 양손창 1200 ms, 17 양손지팡이 1300 ms
-        // on 327 skills, none of which carry a custom_gcd), so those skills follow their weapon class
-        // instead of the flat server default.
-        var weaponGcdSpeed = Template.WeaponGcdId > 0
-            ? ItemManager.Instance.GetHoldable((uint)Template.WeaponGcdId)?.Speed ?? 0
+        // weapon_gcd_id selects Mainhand (15), Offhand (16), or Ranged (17). Ranged skills that arm a GCD
+        // without that marker also use the ranged slot. default_gcd takes priority over custom_gcd. If a
+        // weapon slot is selected, its speed scales the default GCD; otherwise the caster-specific server
+        // default is used. With default_gcd unset, custom_gcd scales by weapon speed, or weapon speed itself
+        // is the base. Skills with no authored GCD fields also use the caster-specific server default.
+        var equippedWeaponGcdSpeed = usesWeaponSpeedForGcd && weaponGcdSlot is { } slot
+            ? GetEquippedWeaponGcdSpeed(unit, slot)
             : 0;
+        var useDefaultGcd = Template.DefaultGcd ||
+                            (usesWeaponSpeedForGcd && equippedWeaponGcdSpeed <= 0 && Template.CustomGcd <= 0);
         var gcd = SkillGcdRules.ResolveSharedGcd(
-            Template.CustomGcd, Template.DefaultGcd, weaponGcdSpeed, unit is Npc);
+            Template.CustomGcd, useDefaultGcd, equippedWeaponGcdSpeed, unit is Npc);
         if (gcd <= 0)
             return;
-        var gcdMul = SkillGcdRules.SharedGcdMultiplier(
-            Template.UseWeaponCooldownTime, unit.GlobalCooldownMul, unit.CastTimeMul);
+        var gcdMul = SkillGcdRules.AttackSpeedGcdMultiplier(unit.AttackSpeedRating, unit.GlobalCooldownMul);
         unit.GlobalCooldown = DateTime.UtcNow.AddMilliseconds(gcd * gcdMul * GlobalCooldownFactor(unit));
     }
+
+    internal double ResolvePlotGlobalCooldownMilliseconds(Unit unit, int authoredDurationMs)
+    {
+        if (authoredDurationMs == 0)
+            return 0;
+
+        var usesWeaponSpeedForGcd = Template.WeaponGcdId > 0 || UsesRangedWeaponForGcd;
+        var weaponGcdSpeed = usesWeaponSpeedForGcd && GetWeaponGcdEquipmentSlot() is { } slot
+            ? GetEquippedWeaponGcdSpeed(unit, slot)
+            : 0;
+        var weaponSpeedMultiplier = weaponGcdSpeed > 0
+            ? weaponGcdSpeed / (double)SkillGcdRules.PlayerDefaultGcd
+            : 1.0;
+        var attackSpeedMultiplier = SkillGcdRules.AttackSpeedGcdMultiplier(
+            unit.AttackSpeedRating, unit.GlobalCooldownMul);
+
+        return authoredDurationMs * weaponSpeedMultiplier * attackSpeedMultiplier * GlobalCooldownFactor(unit);
+    }
+
+    private EquipmentItemSlot? GetWeaponGcdEquipmentSlot() => (WeaponGcdId)Template.WeaponGcdId switch
+    {
+        WeaponGcdId.Mainhand => EquipmentItemSlot.Mainhand,
+        WeaponGcdId.Offhand => EquipmentItemSlot.Offhand,
+        WeaponGcdId.Ranged => EquipmentItemSlot.Ranged,
+        _ when Template.WeaponGcdId <= 0 && UsesRangedWeaponForGcd => EquipmentItemSlot.Ranged,
+        _ => null
+    };
+
+    private static int GetEquippedWeaponGcdSpeed(Unit unit, EquipmentItemSlot slot)
+    {
+        var weapon = unit.Equipment?.GetItemBySlot((int)slot);
+        return weapon?.Template is WeaponTemplate weaponTemplate
+            ? weaponTemplate.HoldableTemplate?.Speed ?? 0
+            : 0;
+    }
+
+    private bool UsesRangedWeaponForGcd =>
+        (DamageType)Template.DamageTypeId == DamageType.Ranged ||
+        Template.WeaponSlotForRangeId == (int)EquipmentItemSlot.Ranged;
 
     /// <summary>
     /// The caster's <c>skill_modifiers</c> factor for the armed global cooldown (attribute 15,
@@ -2833,6 +2887,11 @@ public class Skill
     public void ConsumeMana(BaseUnit caster)
     {
         if (caster is not Unit unit)
+            return;
+
+        // A plot ManaCost effect is the authoritative cost, often selected by target relation.
+        // Charge it at that plot event so invalid targets do not pay skills.mana_cost first.
+        if (caster is Character && Template.Plot?.HasManaCostEffect == true)
             return;
 
         var manaCost = ManaCost(unit);

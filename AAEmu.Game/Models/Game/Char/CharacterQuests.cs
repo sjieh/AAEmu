@@ -42,7 +42,10 @@ public class CharacterQuests(Character owner)
     public void BindPlayingCinema(uint cinemaId)
     {
         if (cinemaId != 0)
+        {
+            DismountForCinema(cinemaId);
             Owner.CurrentlyPlayingCinemaId = cinemaId;
+        }
     }
 
     /// <summary>
@@ -56,9 +59,16 @@ public class CharacterQuests(Character owner)
 
         var alreadyPlaying = QuestCinemaBindRules.ShouldCreditOnEnterProgress(
             Owner.CurrentlyPlayingCinemaId, cinemaId);
+        DismountForCinema(cinemaId);
         Owner.CurrentlyPlayingCinemaId = cinemaId;
         if (alreadyPlaying)
             Owner.Events.OnCinemaStarted(Owner, new OnCinemaStartedArgs { CinemaId = cinemaId });
+    }
+
+    private void DismountForCinema(uint cinemaId)
+    {
+        if (cinemaId != 0 && Owner.ForceDismount())
+            Logger.Info("Dismounted {0} before cinema {1}", Owner.Name, cinemaId);
     }
 
     public void EnqueueCinemaEndEffects(uint cinemaId, QuestComponentTemplate component)

@@ -181,6 +181,11 @@ public class DamageEffect : EffectTemplate
         if (caster is not Unit)
             return;
 
+        // A Heal-typed DamageEffect still subtracts HP. Use the healing stats for the attacker's
+        // output, while treating the hit as magical for target-side resistance, immunity, and
+        // damage/proc classification. Actual restoration is handled by HealEffect.
+        var damageType = DamageType == DamageType.Heal ? DamageType.Magic : DamageType;
+
         // House removal debuff (buff 2250) is self-cast (caster == target == the house). CanAttack
         // rejects self-targets, so route the tick to HousingManager, which scales the damage to the
         // house's own MaxHp and owns the wreck/shell timing.
@@ -206,7 +211,7 @@ public class DamageEffect : EffectTemplate
         // *_etc_dot for a damage-over-time tick (magic or anything else), *_buff_trigger for a hit a buff
         // trigger applied rather than a cast. See BuffRemoveOnRules for the row counts behind that.
         var hitCause = BuffRemoveOnRules.HitCause(source?.FromBuffTrigger == true,
-            source?.Buff?.TickEffects.Count > 0, DamageType == DamageType.Magic);
+            source?.Buff?.TickEffects.Count > 0, damageType == DamageType.Magic);
 
         foreach (var flag in BuffRemoveOnRules.AttackedFlags(hitCause))
             trg.Buffs.TriggerRemoveOn(flag);
@@ -223,7 +228,7 @@ public class DamageEffect : EffectTemplate
         // cancel_protection: 't' — 10,923 of the 11,001 rows, and the column's own default — keeps the
         // victim's damage immunity exactly where it was. The 78 rows that clear it are the mechanical siege
         // and device hits that have to land anyway.
-        if (CancelProtection && target.Buffs.CheckDamageImmune(DamageType))
+        if (CancelProtection && target.Buffs.CheckDamageImmune(damageType))
         {
             target.BroadcastPacket(new SCUnitDamagedPacket(castObj, casterObj, caster.ObjId, target.ObjId, 1, 0)
             {
@@ -264,7 +269,11 @@ public class DamageEffect : EffectTemplate
                     hitType = SkillHitType.MeleeHit;
                 break;
             case DamageType.Magic:
-                if (Random.Shared.Next(0f, 100f) < ((Unit)caster).SpellCritical - flexibilityRateMod)
+            case DamageType.Heal:
+                var criticalChance = DamageType == DamageType.Heal
+                    ? ((Unit)caster).HealCritical
+                    : ((Unit)caster).SpellCritical;
+                if (Random.Shared.Next(0f, 100f) < criticalChance - flexibilityRateMod)
                     hitType = SkillHitType.SpellCritical;
                 else
                     hitType = SkillHitType.SpellHit;
@@ -289,33 +298,71 @@ public class DamageEffect : EffectTemplate
         // Used for NPCs, I think
         var levelMin = 0.0f;
         var levelMax = 0.0f;
+        var casterUnit = (Unit)caster;
+        var skill = source?.Skill;
+        var skillRank = Math.Max((int)(skill?.Level ?? 1), 1);
+        var skillAbilityLevel = GetSkillAbilityLevel(skill, skillRank);
+        var weaponSpeedMultiplier = UsedWeaponAttackSpeedMultiplier(casterUnit);
         if (UseLevelDamage)
         {
-            var lvlMd = ((Unit)caster).LevelDps * LevelMd;
-            // Hack null-check on skill
-            var levelModifier = (((source.Skill?.Level ?? 1) - 1) / 49 * (LevelVaEnd - LevelVaStart) + LevelVaStart) * 0.01f;
+            // Character skill damage advances at each skill-rank ability breakpoint, not with the
+            // character's current level. NPCs and other units keep their own level-damage formulas.
+            var levelDps = caster is Character characterCaster
+                ? characterCaster.GetLevelDpsForAbilityLevel(skillAbilityLevel)
+                : casterUnit.LevelDps;
+            var lvlMd = levelDps * LevelMd * weaponSpeedMultiplier;
+            var skillRankProgress = Math.Clamp((skillRank - 1) / 49f, 0f, 1f);
+            var levelModifier = (LevelVaStart + skillRankProgress * (LevelVaEnd - LevelVaStart)) * 0.01f;
 
             levelMin += lvlMd - levelModifier * lvlMd + 0.5f;
             levelMax += (levelModifier + 1) * lvlMd + 0.5f;
         }
 
-        // Stats/Weapon DPS
+        // Character typed DPS already includes its primary-stat contribution and applicable gear/buff
+        // modifiers. When that value supplies the dps_multiplier term, remove the same primary-stat base
+        // from dps_inc so the stat contributes only once. If no typed DPS term is used, keep dps_inc intact.
+        var hasCharacterDpsTerm = caster is Character
+            && DpsMultiplier != 0f
+            && (UseMainhandWeapon || UseOffhandWeapon || UseRangedWeapon);
         var dpsInc = 0;
         switch (DamageType)
         {
             case DamageType.Melee:
-                dpsInc = ((Unit)caster).DpsInc;
+                dpsInc = casterUnit.DpsInc;
+                if (caster is Character meleeCharacter && hasCharacterDpsTerm && UseMainhandWeapon)
+                    dpsInc -= meleeCharacter.Str * 250;
                 break;
             case DamageType.Magic:
-                dpsInc = ((Unit)caster).MDps + ((Unit)caster).MDpsInc;
+                dpsInc = casterUnit.MDps + casterUnit.MDpsInc;
+                if (caster is Character magicCharacter)
+                {
+                    if (hasCharacterDpsTerm)
+                    {
+                        dpsInc = magicCharacter.MDpsInc;
+                        dpsInc -= magicCharacter.Int * 250;
+                    }
+                }
+                break;
+            case DamageType.Heal:
+                dpsInc = casterUnit.HDps + casterUnit.HDpsInc;
+                if (caster is Character healingCharacter)
+                {
+                    if (hasCharacterDpsTerm)
+                    {
+                        dpsInc = healingCharacter.HDpsInc;
+                        dpsInc -= healingCharacter.Spi * 250;
+                    }
+                }
                 break;
             case DamageType.Ranged:
-                dpsInc = ((Unit)caster).RangedDpsInc;
+                dpsInc = casterUnit.RangedDpsInc;
+                if (caster is Character rangedCharacter && hasCharacterDpsTerm && UseRangedWeapon)
+                    dpsInc -= rangedCharacter.Dex * 250;
                 break;
             case DamageType.Siege:
                 // siege_dps (260), the siege counterpart of spell_dps: the caster's own contribution to the
                 // hit, added to the level damage the same way. No such row means dpsInc stays 0.
-                dpsInc = ((Unit)caster).SiegeDps;
+                dpsInc = casterUnit.SiegeDps;
                 break;
         }
 
@@ -323,16 +370,16 @@ public class DamageEffect : EffectTemplate
         var weaponDamage = 0.0f;
 
         if (UseMainhandWeapon)
-            weaponDamage = DamageEffectRules.WeaponDps(
-                EquippedWeaponDps((Unit)caster, EquipmentItemSlot.Mainhand), ((Unit)caster).Dps * 0.001f);
+            weaponDamage = WeaponDamageForDamageType(casterUnit, EquipmentItemSlot.Mainhand, DamageType);
         if (UseOffhandWeapon)
-            weaponDamage = DamageEffectRules.WeaponDps(
-                EquippedWeaponDps((Unit)caster, EquipmentItemSlot.Offhand), ((Unit)caster).OffhandDps * 0.001f) + weaponDamage;
+            weaponDamage += WeaponDamageForDamageType(casterUnit, EquipmentItemSlot.Offhand, DamageType);
         if (UseRangedWeapon)
-            weaponDamage = DamageEffectRules.WeaponDps(
-                EquippedWeaponDps((Unit)caster, EquipmentItemSlot.Ranged), ((Unit)caster).RangedDps * 0.001f) + weaponDamage;
+            weaponDamage += WeaponDamageForDamageType(casterUnit, EquipmentItemSlot.Ranged, DamageType);
 
-        max = DpsMultiplier * weaponDamage + max;
+        // dps_mult scales aggregate character DPS; dps_inc_multi scales the remaining formula increment.
+        // A primary-stat base already present in aggregate DPS is removed from dps_inc above to prevent
+        // counting it twice. Both terms then receive the used weapon's base-speed factor.
+        max = (DpsMultiplier * weaponDamage + max) * weaponSpeedMultiplier;
 
         var minCastBonus = 1000f;
         // Hack null-check on skill
@@ -385,6 +432,7 @@ public class DamageEffect : EffectTemplate
         {
             DamageType.Melee => ((Unit)caster).MeleeDamageMul,
             DamageType.Magic => ((Unit)caster).SpellDamageMul,
+            DamageType.Heal => ((Unit)caster).HealDamageMul,
             DamageType.Ranged => ((Unit)caster).RangedDamageMul,
             // siege_damage_mul (261), the siege counterpart of the three above. Without such a row the
             // factor is exactly 1.0f, so this branch keeps the plain "no type multiplier" it had.
@@ -409,8 +457,9 @@ public class DamageEffect : EffectTemplate
 
         if (source.Skill != null)
         {
-            min = (float)caster.SkillModifiersCache.ApplyModifiers(source.Skill, SkillAttribute.Damage, min);
-            max = (float)caster.SkillModifiersCache.ApplyModifiers(source.Skill, SkillAttribute.Damage, max);
+            var skillAttribute = DamageType == DamageType.Heal ? SkillAttribute.Heal : SkillAttribute.Damage;
+            min = (float)caster.SkillModifiersCache.ApplyModifiers(source.Skill, skillAttribute, min);
+            max = (float)caster.SkillModifiersCache.ApplyModifiers(source.Skill, skillAttribute, max);
         }
 
         if (source.Buff?.TickEffects.Count > 0)
@@ -424,7 +473,7 @@ public class DamageEffect : EffectTemplate
             caster.Buffs.TriggerRemoveOn(Buffs.BuffRemoveOn.DamageEtcDot);
             trg.Buffs.TriggerRemoveOn(Buffs.BuffRemoveOn.DamagedEtcDot);
 
-            if (DamageType == DamageType.Magic)
+            if (damageType == DamageType.Magic)
             {
                 caster.Buffs.TriggerRemoveOn(Buffs.BuffRemoveOn.DamageSpellDot);
                 trg.Buffs.TriggerRemoveOn(Buffs.BuffRemoveOn.DamagedSpellDot);
@@ -549,7 +598,11 @@ public class DamageEffect : EffectTemplate
                 break;
             case SkillHitType.SpellCritical:
                 finalDamage *= DamageEffectRules.CriticalFactor(
-                    ((Unit)caster).SpellCriticalBonus, CriticalBonus, trg.Flexibility);
+                    DamageType == DamageType.Heal
+                        ? ((Unit)caster).HealCriticalBonus
+                        : ((Unit)caster).SpellCriticalBonus,
+                    CriticalBonus,
+                    trg.Flexibility);
                 break;
                 break;
             default:
@@ -562,7 +615,7 @@ public class DamageEffect : EffectTemplate
         if (target is Unit targetUnit)
         {
             float armor;
-            switch (DamageType)
+            switch (damageType)
             {
                 case DamageType.Melee:
                     armor = Math.Max(0f, targetUnit.Armor - ((Unit)caster).DefensePenetration);
@@ -605,7 +658,8 @@ public class DamageEffect : EffectTemplate
         if (ManaDamage)
             trg.ReduceCurrentMp(caster, value);
         else
-            trg.ReduceCurrentHp(caster, value);        ((Unit)caster).SummarizeDamage += value;
+            trg.ReduceCurrentHp(caster, value, damageType: damageType);
+        ((Unit)caster).SummarizeDamage += value;
 
         if (healthStolen > 0 || manaStolen > 0)
         {
@@ -670,7 +724,7 @@ public class DamageEffect : EffectTemplate
             // kinds (take_damage_melee, take_damage_spell_crit and so on, see ItemProcRules); the attacker is
             // the unit a victim-side proc skill is cast at when it targets another unit.
             if (DamageEffectRules.FiresProcs(FireProc))
-                trgCharacter.Procs?.OnDamageTaken(DamageType, hitType, attacker, source?.Skill);
+                trgCharacter.Procs?.OnDamageTaken(damageType, hitType, attacker, source?.Skill);
         }
 
         if (attacker != null)
@@ -684,7 +738,7 @@ public class DamageEffect : EffectTemplate
             // The victim is the unit an attacker-side proc skill is cast at; whether the hit killed it feeds the
             // one finisher row (proc 46).
             if (DamageEffectRules.FiresProcs(FireProc))
-                attacker.Procs?.OnHit(DamageType, hitType, trg, source?.Skill, trg.Hp <= 0);
+                attacker.Procs?.OnHit(damageType, hitType, trg, source?.Skill, trg.Hp <= 0);
         }
 
         // TODO: Gotta figure out how to tell if it should be applied on getting hit, or on hitting
@@ -766,7 +820,7 @@ public class DamageEffect : EffectTemplate
                 Amount = value
             });
 
-            switch (DamageType)
+            switch (damageType)
             {
                 case DamageType.Melee:
                     trg.Events.OnDamagedMelee(this, new OnDamagedArgs
@@ -852,10 +906,107 @@ public class DamageEffect : EffectTemplate
     }
 
     /// <summary>
-    /// The DPS of the weapon the caster has in <paramref name="slot"/>, or 0 when the slot holds no weapon.
+    /// The equipped weapon's raw DPS for this damage type, or 0 when the slot holds no weapon.
+    /// Character skill damage uses the corresponding aggregate DPS property instead.
     /// </summary>
-    private static float EquippedWeaponDps(Unit caster, EquipmentItemSlot slot) =>
-        (caster.Equipment?.GetItemBySlot((int)slot) as Weapon)?.Dps ?? 0f;
+    private static float EquippedWeaponDps(Unit caster, EquipmentItemSlot slot, DamageType damageType)
+    {
+        var weapon = caster.Equipment?.GetItemBySlot((int)slot) as Weapon;
+        return damageType switch
+        {
+            DamageType.Magic => (float)(weapon?.MDps ?? 0d),
+            DamageType.Heal => (float)(weapon?.HDps ?? 0d),
+            _ => weapon?.Dps ?? 0f
+        };
+    }
+
+    /// <summary>
+    /// The aggregate DPS value for this damage type and equipment slot. Character values include their
+    /// primary stat and gear/buff modifiers; magic and healing use only their matching typed DPS values.
+    /// </summary>
+    private static float UnitDpsForDamageType(Unit caster, EquipmentItemSlot slot, DamageType damageType) =>
+        damageType switch
+        {
+            DamageType.Magic => caster.MDps * 0.001f,
+            DamageType.Heal => caster.HDps * 0.001f,
+            _ => slot switch
+            {
+                EquipmentItemSlot.Mainhand => caster.Dps * 0.001f,
+                EquipmentItemSlot.Offhand => caster.OffhandDps * 0.001f,
+                EquipmentItemSlot.Ranged => caster.RangedDps * 0.001f,
+                _ => 0f
+            }
+        };
+
+    /// <summary>
+    /// Player melee, ranged, magic, and healing damage use aggregate typed DPS so gear and buffs are kept.
+    /// Other damage types and units retain raw weapon-DPS selection and fallback behavior.
+    /// </summary>
+    private static float WeaponDamageForDamageType(Unit caster, EquipmentItemSlot slot, DamageType damageType)
+    {
+        var unitDps = UnitDpsForDamageType(caster, slot, damageType);
+        if (caster is Character
+            && (damageType == DamageType.Melee
+                || damageType == DamageType.Ranged
+                || damageType == DamageType.Magic
+                || damageType == DamageType.Heal))
+            return unitDps;
+
+        // Preserve the non-character mainhand melee calculation, which already used aggregate Dps.
+        if (slot == EquipmentItemSlot.Mainhand && damageType == DamageType.Melee)
+            return caster.Dps * 0.001f;
+
+        return DamageEffectRules.WeaponDps(EquippedWeaponDps(caster, slot, damageType), unitDps);
+    }
+
+    /// <summary>
+    /// The ability-level breakpoint represented by this skill rank. The client recalculates the
+    /// level-damage term at each breakpoint instead of scaling it with the character's current level.
+    /// </summary>
+    private static int GetSkillAbilityLevel(Skill skill, int skillRank)
+    {
+        if (skill?.Template is not { } template)
+            return 1;
+
+        var rankOffset = Math.Max(0, skillRank - 1) * Math.Max(0, template.LevelStep);
+        return Math.Max(1, template.AbilityLevel + rankOffset);
+    }
+
+    /// <summary>
+    /// The base weapon-interval factor applied to rank-based level damage and composed multiplier damage.
+    /// An explicitly selected weapon slot takes priority; otherwise the use-weapon flags select the slot.
+    /// </summary>
+    private float UsedWeaponAttackSpeedMultiplier(Unit caster)
+    {
+        if (WeaponSlotId == (int)EquipmentItemSlot.Mainhand)
+            return EquippedWeaponAttackSpeedMultiplier(caster, EquipmentItemSlot.Mainhand);
+        if (WeaponSlotId == (int)EquipmentItemSlot.Offhand)
+            return EquippedWeaponAttackSpeedMultiplier(caster, EquipmentItemSlot.Offhand);
+        if (WeaponSlotId == (int)EquipmentItemSlot.Ranged)
+            return EquippedWeaponAttackSpeedMultiplier(caster, EquipmentItemSlot.Ranged);
+
+        if (UseMainhandWeapon)
+            return EquippedWeaponAttackSpeedMultiplier(caster, EquipmentItemSlot.Mainhand);
+        if (UseOffhandWeapon)
+            return EquippedWeaponAttackSpeedMultiplier(caster, EquipmentItemSlot.Offhand);
+        if (UseRangedWeapon)
+            return EquippedWeaponAttackSpeedMultiplier(caster, EquipmentItemSlot.Ranged);
+        return 1f;
+    }
+
+    /// <summary>
+    /// Weapon DPS is a per-second value; convert it to damage per hit using the weapon's base interval.
+    /// Attack Speed rating is intentionally not applied here because it changes animation/GCD timing, not
+    /// this weapon-specific damage multiplier.
+    /// </summary>
+    private static float EquippedWeaponAttackSpeedMultiplier(Unit caster, EquipmentItemSlot slot)
+    {
+        var weapon = caster.Equipment?.GetItemBySlot((int)slot) as Weapon;
+        var speedMs = weapon?.Template is WeaponTemplate weaponTemplate
+            ? weaponTemplate.HoldableTemplate?.Speed ?? 0
+            : 0;
+        return speedMs > 0 ? speedMs / 1000f : 1f;
+    }
 
     private static bool TryGetSkillCastIds(CastAction castObj, out uint skillId, out ushort tlId)
     {        switch (castObj)

@@ -266,7 +266,7 @@ public partial class Quest : PacketMarshaler
     }
 
     /// <summary>
-    /// Use Skill на себя или на Npc, с которым взаимодействуем (Use Skill on yourself or on the Npc you interact with)
+    /// Use a skill on yourself or on the NPC you are interacting with.
     /// </summary>
     /// <param name="component"></param>
     public void UseSkillAndBuff(QuestComponentTemplate component)

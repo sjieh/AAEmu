@@ -23,7 +23,7 @@ public class DoodadRemovesSubCommand : SubCommandBase
 
     public override void Execute(ICharacter character, string triggerArgument, IDictionary<string, ParameterValue> parameters, IMessageOutput messageOutput)
     {
-        // Запускаем метод в отдельной задаче (нити)
+        // Run the method in a separate task (thread).
         Task.Run(() =>
         {
             try
@@ -35,7 +35,7 @@ public class DoodadRemovesSubCommand : SubCommandBase
             }
             catch (Exception ex)
             {
-                // Обработка исключения, например, запись в лог
+                // Handle the exception, for example by writing it to the log.
                 Logger.Error($"Ошибка при выполнении метода: {ex.Message}");
             }
         });
@@ -55,7 +55,7 @@ public class DoodadRemovesSubCommand : SubCommandBase
         foreach (var doodad in doodadsInRadius)
         {
             // Remove Doodad
-            doodad.Spawner.Id = 0xffffffff; // removed from the game manually (укажем, что не надо сохранять в файл doodad_spawns_new.json командой /save all)
+            doodad.Spawner.Id = 0xffffffff; // Removed manually; /save all should not write this entry to doodad_spawns_new.json.
             doodad.Hide();
             SendMessage(messageOutput, $"Doodad @DOODAD_NAME({doodad.TemplateId}), ObjId: {doodad.ObjId}, TemplateId:{doodad.TemplateId} removed successfully");
             Logger.Warn($"Doodad @DOODAD_NAME({doodad.TemplateId}), ObjId: {doodad.ObjId}, TemplateId:{doodad.TemplateId} removed successfully");
@@ -64,20 +64,20 @@ public class DoodadRemovesSubCommand : SubCommandBase
 
     private static Doodad GetNearestDoodad(ICharacter character, float radius)
     {
-        // Получаем список объектов Doodad
+        // Get the list of doodad objects.
         var doodads = WorldManager.GetAround<Doodad>((GameObject)character, radius);
 
-        // Инициализируем переменные для хранения ближайшего объекта и расстояния до него
+        // Initialize variables for the nearest object and its distance.
         Doodad nearestDoodad = null;
         var minDistance = float.MaxValue;
 
-        // Проходим по списку объектов
+        // Iterate through the objects.
         foreach (var doodad in doodads)
         {
-            // Вычисляем расстояние между персонажем и текущим объектом Doodad
+            // Calculate the distance between the character and the current doodad.
             var distance = Vector3.Distance(character.Transform.World.Position, doodad.Transform.World.Position);
 
-            // Если расстояние меньше текущего минимального, обновляем ближайший объект и минимальное расстояние
+            // If this distance is shorter, update the nearest object and the minimum distance.
             if (!(distance < minDistance))
             {
                 continue;
@@ -92,10 +92,10 @@ public class DoodadRemovesSubCommand : SubCommandBase
 
     private static List<Doodad> GetDoodadsInRadius(ICharacter character, float radius, uint templateId)
     {
-        // Получаем список объектов Doodad
+        // Get the list of doodad objects.
         var doodads = WorldManager.GetAround<Doodad>((GameObject)character, radius);
 
-        // Фильтруем объекты, чтобы оставить только те, которые находятся в радиусе и имеют совпадающий ObjId с TemplateId
+        // Keep only objects within range whose ObjId matches the TemplateId.
         var doodadsInRadius = doodads
             .Where(doodad => Vector3.Distance(character.Transform.World.Position, doodad.Transform.World.Position) <= radius && doodad.TemplateId == templateId)
             .ToList();

@@ -41,7 +41,7 @@ public class GameScheduleManager(
 
         SchedulesGameData.Instance.PostLoad();
 
-        LoadGameScheduleSpawnersData(); // добавил разделение spawnerId для Npc & Doodads
+        LoadGameScheduleSpawnersData(); // Spawner IDs are now separated for NPCs and doodads.
 
         Logger.Info("Loaded schedules");
 
@@ -438,10 +438,10 @@ public class GameScheduleManager(
         var currentTime = now.TimeOfDay;
         var currentDate = now.Date;
 
-        // Преобразуем стандартный DayOfWeek в ваш кастомный DayOfWeek
+        // Convert the standard DayOfWeek to the custom DayOfWeek type.
         var currentDayOfWeek = (DayOfWeek)((int)now.DayOfWeek + 1);
 
-        // Проверка на нулевые дату и месяц
+        // Check for a zero day or month.
         var startDate = value is { StYear: > 0, StMonth: > 0, StDay: > 0 }
             ? new DateTime(value.StYear, value.StMonth, value.StDay)
             : DateTime.MinValue;
@@ -456,18 +456,18 @@ public class GameScheduleManager(
         var hasStarted = false;
         var hasEnded = false;
 
-        // Проверка на попадание в период по дате и времени
+        // Check whether the date and time fall within the period.
         if ((startDate == DateTime.MinValue || currentDate > startDate || (currentDate == startDate && currentTime >= startTime)) &&
             (endDate == DateTime.MaxValue || currentDate < endDate || (currentDate == endDate && currentTime <= endTime)))
         {
-            // Проверка на попадание в период по дню недели
+            // Check whether the day of the week falls within the period.
             if (currentDayOfWeek == value.DayOfWeekId || value.DayOfWeekId == DayOfWeek.Invalid)
             {
                 hasStarted = true;
             }
         }
 
-        // Проверка на окончание периода
+        // Check whether the period has ended.
         if (endDate != DateTime.MaxValue && (currentDate > endDate || (currentDate == endDate && currentTime >= endTime)))
         {
             hasEnded = true;

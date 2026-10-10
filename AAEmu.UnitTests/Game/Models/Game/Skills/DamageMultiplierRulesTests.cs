@@ -8,8 +8,8 @@ namespace AAEmu.UnitTests.Game.Models.Game.Skills;
 
 public class DamageMultiplierRulesTests
 {
-    /// <summary>Six different factors so a wrong pick cannot pass by coincidence.</summary>
-    private static AntiKindDamageMultipliers Distinct() => new(2f, 3f, 4f, 5f, 6f, 7f);
+    /// <summary>Distinct factors so a wrong pick cannot pass by coincidence.</summary>
+    private static AntiKindDamageMultipliers Distinct() => new(2f, 3f, 4f, 8f, 5f, 6f, 7f);
 
     [Test]
     public async Task ClassifyVictim_NpcIsNpcKind()
@@ -44,6 +44,8 @@ public class DamageMultiplierRulesTests
             DamageVictimKind.Npc, DamageType.Ranged, multipliers)).IsEqualTo(3f);
         await Assert.That(DamageMultiplierRules.SelectDamageMultiplier(
             DamageVictimKind.Npc, DamageType.Magic, multipliers)).IsEqualTo(4f);
+        await Assert.That(DamageMultiplierRules.SelectDamageMultiplier(
+            DamageVictimKind.Npc, DamageType.Heal, multipliers)).IsEqualTo(8f);
     }
 
     [Test]
@@ -57,6 +59,8 @@ public class DamageMultiplierRulesTests
             DamageVictimKind.Player, DamageType.Ranged, multipliers)).IsEqualTo(6f);
         await Assert.That(DamageMultiplierRules.SelectDamageMultiplier(
             DamageVictimKind.Player, DamageType.Magic, multipliers)).IsEqualTo(7f);
+        await Assert.That(DamageMultiplierRules.SelectDamageMultiplier(
+            DamageVictimKind.Player, DamageType.Heal, multipliers)).IsEqualTo(7f);
     }
 
     [Test]
@@ -70,16 +74,13 @@ public class DamageMultiplierRulesTests
     }
 
     [Test]
-    public async Task SelectDamageMultiplier_SiegeAndHealTypes_AreNeutral()
+    public async Task SelectDamageMultiplier_SiegeIsNeutral()
     {
-        // Neither has an anti-kind attribute in the 10.0.2.13 table; the existing DamageEffect switch
-        // gives siege 1.0f with a TODO, and Heal is not a damage type at all.
+        // Siege has no anti-kind attribute in the 10.0.2.13 table.
         foreach (var victimKind in Enum.GetValues<DamageVictimKind>())
         {
             await Assert.That(DamageMultiplierRules.SelectDamageMultiplier(
                 victimKind, DamageType.Siege, Distinct())).IsEqualTo(1.0f);
-            await Assert.That(DamageMultiplierRules.SelectDamageMultiplier(
-                victimKind, DamageType.Heal, Distinct())).IsEqualTo(1.0f);
         }
     }
 
@@ -103,7 +104,7 @@ public class DamageMultiplierRulesTests
     {
         // 위압감 (buff 2102/2104/25747/25907) carries -1500 on each anti-NPC id: -0.5 composed. A
         // negative factor would flip the damage into a heal, so it stops at zero instead.
-        var intimidation = new AntiKindDamageMultipliers(-0.5f, -0.5f, -0.5f, 1f, 1f, 1f);
+        var intimidation = new AntiKindDamageMultipliers(-0.5f, -0.5f, -0.5f, -0.5f, 1f, 1f, 1f);
 
         await Assert.That(DamageMultiplierRules.SelectDamageMultiplier(
             DamageVictimKind.Npc, DamageType.Melee, intimidation)).IsEqualTo(0f);
@@ -122,6 +123,7 @@ public class DamageMultiplierRulesTests
         await Assert.That(multipliers.MeleeAntiNpc).IsEqualTo(1.0f);
         await Assert.That(multipliers.RangedAntiNpc).IsEqualTo(1.0f);
         await Assert.That(multipliers.SpellAntiNpc).IsEqualTo(1.0f);
+        await Assert.That(multipliers.HealAntiNpc).IsEqualTo(1.0f);
         await Assert.That(multipliers.MeleeAntiPc).IsEqualTo(1.0f);
         await Assert.That(multipliers.RangedAntiPc).IsEqualTo(1.0f);
         await Assert.That(multipliers.SpellAntiPc).IsEqualTo(1.0f);
@@ -134,6 +136,7 @@ public class DamageMultiplierRulesTests
         TestBuffModifier.Apply(unit, UnitAttribute.MeleeDamageMulAntiNpc, 1000, buffIndex: 1);
         TestBuffModifier.Apply(unit, UnitAttribute.RangedDamageMulAntiNpc, 2000, buffIndex: 2);
         TestBuffModifier.Apply(unit, UnitAttribute.SpellDamageMulAntiNpc, 3000, buffIndex: 3);
+        TestBuffModifier.Apply(unit, UnitAttribute.HealDamageMulAntiNpc, 7000, buffIndex: 7);
         TestBuffModifier.Apply(unit, UnitAttribute.MeleeDamageMulAntiPc, 4000, buffIndex: 4);
         TestBuffModifier.Apply(unit, UnitAttribute.RangedDamageMulAntiPc, 5000, buffIndex: 5);
         TestBuffModifier.Apply(unit, UnitAttribute.SpellDamageMulAntiPc, 6000, buffIndex: 6);
@@ -143,6 +146,7 @@ public class DamageMultiplierRulesTests
         await Assert.That(multipliers.MeleeAntiNpc).IsEqualTo(2f);
         await Assert.That(multipliers.RangedAntiNpc).IsEqualTo(3f);
         await Assert.That(multipliers.SpellAntiNpc).IsEqualTo(4f);
+        await Assert.That(multipliers.HealAntiNpc).IsEqualTo(8f);
         await Assert.That(multipliers.MeleeAntiPc).IsEqualTo(5f);
         await Assert.That(multipliers.RangedAntiPc).IsEqualTo(6f);
         await Assert.That(multipliers.SpellAntiPc).IsEqualTo(7f);

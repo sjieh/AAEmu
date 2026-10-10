@@ -109,7 +109,7 @@ public class TestTransfer : ICommand
         //owner.Spawn();
 
         //var transfer = new Transfer();
-        //transfer.TemplateId = owner.Template.TransferBindings[0].TransferId; // взять из owner transferId для второй части повозки
+        //transfer.TemplateId = owner.Template.TransferBindings[0].TransferId; // Get the transfer ID for the second cart section from its owner.
         //transfer.ModelId = transfer.Template.ModelId;
         //transfer.ObjId = ObjectIdManager.Instance.GetNextId();
         //transfer.TlId = (ushort)TlIdManager.Instance.GetNextId();

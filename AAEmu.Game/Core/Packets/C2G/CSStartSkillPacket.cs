@@ -274,7 +274,7 @@ public class CSStartSkillPacket() : GamePacket(CSOffsets.CSStartSkillPacket, 1)
         else if (SkillManager.Instance.IsDefaultSkill(skillId, Connection.ActiveChar.Race, Connection.ActiveChar.Gender) || SkillManager.Instance.IsCommonSkill(skillId) && skillCaster is not SkillItem)
         {
             // Is it a common skill?
-            skill = new Skill(SkillManager.Instance.GetSkillTemplate(skillId)); // TODO: переделать / rewrite ...
+            skill = new Skill(SkillManager.Instance.GetSkillTemplate(skillId)); // TODO: Refactor this.
             skillResult = skill.Use(Connection.ActiveChar, skillCaster, skillCastTarget, skillObject, false,
                 out skillResultErrorValueUShort, out skillResultErrorValue);
             if (skillResult == SkillResult.Success && skillId < 5000 && skillCaster.ObjId == Connection.ActiveChar.ObjId)
@@ -289,7 +289,7 @@ public class CSStartSkillPacket() : GamePacket(CSOffsets.CSStartSkillPacket, 1)
             // A skill triggered by an item
             var player = Connection.ActiveChar;
             // var item = player.Inventory.GetItemById(si.ItemId);
-            // добавил проверку на ItemBindType.BindOnPickup для записи портала с помощью камина в доме
+            // Check ItemBindType.BindOnPickup when recording a portal with a fireplace in a house.
             if (si.SkillSourceItem == null || skillId != si.SkillSourceItem.Template.UseSkillId && si.SkillSourceItem.Template.BindType != ItemBindType.BindOnPickup)
                 return;
             // An item can carry its own guild-level floor. Refuse the cast rather than let the
@@ -320,16 +320,18 @@ public class CSStartSkillPacket() : GamePacket(CSOffsets.CSStartSkillPacket, 1)
             Logger.Warn($"StartSkill: Id {skillId}, undefined use type");
             // The fallback used to cast any valid template, so a forged skill id the character never
             // learned was accepted and its effects ran. Ability skills now have to be held: learned, or
-            // granted by a live buff (CharacterSkills.HasSkill covers both). Basic attacks, racial
-            // defaults, common skills and item casts keep the permissive path — quest items and doodad
-            // interactions arrive here.
+            // granted by a live buff (CharacterSkills.HasSkill covers both), unless their template is
+            // plot-only. Basic attacks, racial defaults, common skills and item casts also keep the
+            // permissive path — quest items and doodad interactions arrive here.
             var fallbackTemplate = SkillManager.Instance.GetSkillTemplate(skillId);
             skill = new Skill(fallbackTemplate);
             if (!SkillUseConditionRules.AllowsUnlearnedCast(
                     fallbackTemplate?.AbilityId ?? 0,
                     isItemCast: false,
                     isDefaultSkill: SkillManager.Instance.IsDefaultSkill(skillId),
-                    isCommonSkill: SkillManager.Instance.IsCommonSkill(skillId)) &&
+                    isCommonSkill: SkillManager.Instance.IsCommonSkill(skillId),
+                    isPlotOnly: fallbackTemplate?.PlotOnly ?? false,
+                    isComboFollowUp: Connection.ActiveChar.Skills.HasActiveComboFollowUp(skillId)) &&
                 !Connection.ActiveChar.Skills.HasSkill(skillId))
             {
                 Logger.Warn("StartSkill rejected unlearned ability skill {0} for {1}", skillId, Connection.ActiveChar.Name);
@@ -392,15 +394,16 @@ public class CSStartSkillPacket() : GamePacket(CSOffsets.CSStartSkillPacket, 1)
         if (template.StopAutoAttack && skillId is not (2 or 3 or 4))
             character.StopAutoSkill(character);
 
-        // A mount/hull cast is made on the rider's behalf but the skill still has to be one the
-        // character holds; the check is the same on both dispatch paths (this one never consulted
-        // Character.Skills at all).
+        // A mount/hull cast is made on the rider's behalf. Apply the same learned-skill and
+        // plot-only exceptions as on the local dispatch path.
         if (skillCaster is not SkillItem &&
             !SkillUseConditionRules.AllowsUnlearnedCast(
                 template.AbilityId,
                 isItemCast: false,
                 isDefaultSkill: SkillManager.Instance.IsDefaultSkill(skillId),
-                isCommonSkill: SkillManager.Instance.IsCommonSkill(skillId)) &&
+                isCommonSkill: SkillManager.Instance.IsCommonSkill(skillId),
+                isPlotOnly: template.PlotOnly,
+                isComboFollowUp: character.Skills.HasActiveComboFollowUp(skillId)) &&
             !character.Skills.HasSkill(skillId))
         {
             Logger.Warn("ZoneAuthority StartSkill rejected unlearned ability skill {0} for {1}", skillId, character.Name);
@@ -448,7 +451,16 @@ public class CSStartSkillPacket() : GamePacket(CSOffsets.CSStartSkillPacket, 1)
             }
         }
 
-        var skill = new Skill(template);
+        // The cast packet only carries the skill id. Resolve learned/buff-granted skills from the
+        // character's ability level, as the non-ZoneAuthority path does; default, item, and mount
+        // skills retain their rank-1 construction.
+        var usesCharacterSkillRank =
+            skillCaster is not SkillCasterMount &&
+            skillCaster is not SkillItem &&
+            !SkillManager.Instance.IsDefaultSkill(skillId, character.Race, character.Gender) &&
+            !SkillManager.Instance.IsCommonSkill(skillId) &&
+            character.Skills.HasSkill(skillId);
+        var skill = usesCharacterSkillRank ? new Skill(template, character) : new Skill(template);
 
         // An action the player picked off an NPC's interaction bar is a player cast whose plot graph is the
         // only thing that moves the client's bar: the skill has no casting time, so the Started that would
@@ -469,6 +481,25 @@ public class CSStartSkillPacket() : GamePacket(CSOffsets.CSStartSkillPacket, 1)
             out var skillResultErrorValueUShort, out var skillResultErrorValue);
         if (skillResult != SkillResult.Success)
         {
+            // Buffer one early request until the caster's shared GCD expires. The character queue
+            // keeps only the latest input, so held-key retries do not accumulate into a burst.
+            var now = DateTime.UtcNow;
+            var casterUnitForQueue = casterUnit as Unit;
+            if (skillResult == SkillResult.CooldownTime &&
+                !template.IgnoreGlobalCooldown &&
+                casterUnitForQueue != null &&
+                casterUnitForQueue.GlobalCooldown > now)
+            {
+                var retryDelay = casterUnitForQueue.GlobalCooldown - now;
+                character.QueuePendingSkillCast(() =>
+                {
+                    if (Connection?.ActiveChar == character)
+                        HandleZoneAuthorityCast(skillId, skillCaster, skillCastTarget, skillObject);
+                }, retryDelay);
+                Logger.Trace("ZoneAuthority queued skillId={0} until GCD ends in {1:F0}ms",
+                    skillId, retryDelay.TotalMilliseconds);
+                return;
+            }
             // Don't poison the melee hotbar with CooldownTime fails — client auto-retries skill 2/3/4.
             if (skillResult == SkillResult.CooldownTime &&
                 (skillId is 2 or 3 or 4 ||
@@ -499,6 +530,9 @@ public class CSStartSkillPacket() : GamePacket(CSOffsets.CSStartSkillPacket, 1)
             Logger.Warn("ZoneAuthority Use failed skillId={0} result={1} caster={2}", skillId, skillResult, casterUnit.ObjId);
             return;
         }
+
+        // A newer cast succeeded, so an older request queued behind the shared GCD is stale.
+        character.ClearPendingSkillCast();
 
         if (casterUnit is Slave slave)
         {

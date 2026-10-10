@@ -59,6 +59,13 @@ public readonly record struct SkillRequirement(bool OnTarget, uint BuffId, uint 
 /// </remarks>
 public static class SkillRequirementRules
 {
+    // skill_reqs peace-area gates: Nui statues, instance-dungeon entrances, and related safe areas.
+    // They block character abilities, while conversation actions are allowed through them.
+    private static readonly IReadOnlySet<uint> AreaPeaceBuffIds = new HashSet<uint>
+    {
+        2149, 4828, 14754, 21394, 26385
+    };
+
     /// <summary>
     /// The rows whose skill is usable only <i>while</i> the row's buff or tag is present. Each is a state
     /// the player is otherwise barred from acting in, and the skills it gates exist to be used in it:
@@ -105,6 +112,13 @@ public static class SkillRequirementRules
         return requirement.Require ? !carries : carries;
     }
 
+    /// <summary>Whether this is one of the caster-side peace-area skill restrictions.</summary>
+    public static bool IsAreaPeaceZoneRestriction(in SkillRequirement requirement) =>
+        !requirement.OnTarget &&
+        !requirement.Require &&
+        requirement.BuffTagId == 0 &&
+        AreaPeaceBuffIds.Contains(requirement.BuffId);
+
     /// <summary>
     /// Whether the cast may proceed. <paramref name="message"/> receives the first failing row's client
     /// string, so the caller can show why.
@@ -113,7 +127,8 @@ public static class SkillRequirementRules
         IReadOnlyList<SkillRequirement> requirements,
         Func<SkillRequirement, bool> carriesBuff,
         Func<SkillRequirement, bool> carriesBuffTag,
-        out string message)
+        out string message,
+        Func<SkillRequirement, bool> ignoreRequirement = null)
     {
         message = null;
         if (requirements == null || requirements.Count == 0)
@@ -124,6 +139,9 @@ public static class SkillRequirementRules
 
         foreach (var requirement in requirements)
         {
+            if (ignoreRequirement?.Invoke(requirement) == true)
+                continue;
+
             var hasBuff = carriesBuff?.Invoke(requirement) ?? false;
             var hasTag = carriesBuffTag?.Invoke(requirement) ?? false;
 

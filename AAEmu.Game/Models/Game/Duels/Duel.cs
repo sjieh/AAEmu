@@ -13,8 +13,8 @@ public class Duel(Character challenger, Character challenged, byte duelType = 1)
     /// <summary>A party duel - the client's "start_party_duel" cue.</summary>
     public const byte PartyDuel = 2;
 
-    public Character Challenger { get; set; } = challenger; // это персонаж который вызвал нас на дуэль
-    public Character Challenged { get; set; } = challenged; // это наш персонаж (т.е. connection.ActiveChar)
+    public Character Challenger { get; set; } = challenger; // The character who challenged us to a duel.
+    public Character Challenged { get; set; } = challenged; // Our character (connection.ActiveChar).
 
     /// <summary>
     /// Echoed back in SCDuelStarted. The client ignores that packet outright when this is 0, so it has
@@ -34,16 +34,16 @@ public class Duel(Character challenger, Character challenged, byte duelType = 1)
 
     public void SendPacketsBoth(GamePacket packet)
     {
-        // нужен когда пакеты одинаковы у обоих персонажей
-        Challenger.SendPacket(packet); // по типу Broadcast только тем, кто в дуэли
+        // Needed when both characters receive the same packet.
+        Challenger.SendPacket(packet); // Like Broadcast, but only to the duel participants.
         Challenged.SendPacket(packet);
     }
     public void SendPacketChallenger(GamePacket packet)
     {
-        Challenger.SendPacket(packet); // только вызвавшему дуэль
+        Challenger.SendPacket(packet); // Only to the challenger.
     }
     public void SendPacketChallenged(GamePacket packet)
     {
-        Challenged.SendPacket(packet); // только вызываемому на дуэль
+        Challenged.SendPacket(packet); // Only to the challenged player.
     }
 }

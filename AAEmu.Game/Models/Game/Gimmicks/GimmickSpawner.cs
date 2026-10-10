@@ -120,7 +120,7 @@ public class GimmickSpawner : Spawner<Gimmick>
         }
 
         gimmick.SetScale(Scale);
-        gimmick.Spawn(); // добавляем в мир
+        gimmick.Spawn(); // Add it to the world.
         ParentWorld.GimmickManager.AddActiveGimmick(gimmick);
         Created = gimmick;
 

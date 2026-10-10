@@ -119,17 +119,9 @@ public static class DamageEffectRules
     public static bool FiresProcs(bool fireProc) => fireProc;
 
     /// <summary>
-    /// The damage a weapon flag (<c>use_mainhand_weapon</c> 5,498 rows, <c>use_offhand_weapon</c> 31,
-    /// <c>use_ranged_weapon</c> 736) contributes: the equipped weapon's own DPS.
+    /// Selects raw weapon DPS when present, otherwise the matching unit DPS fallback. Player melee, ranged,
+    /// magic, and healing calculations use aggregate typed DPS; this selector remains for other damage paths.
     /// </summary>
-    /// <remarks>
-    /// <paramref name="unitDps"/> is the composed attribute — <c>Character.Dps</c> is
-    /// <c>weapon.Dps * 1000 + Str / 5 * 1000</c> before its bonuses and <c>Npc.Dps</c> adds <c>Str / 10</c> —
-    /// and it is only the fallback for a caster with no weapon item in the slot, which is every NPC and every
-    /// unarmed unit. A weapon-flagged effect means "scale off the weapon"; the stat contribution already has
-    /// its own term in the composition (<c>dps_inc_multiplier</c> over <c>melee_dps_inc</c> and its twins),
-    /// so reading the composed attribute there counted the caster's strength twice.
-    /// </remarks>
     public static float WeaponDps(float weaponDps, float unitDps) => weaponDps > 0f ? weaponDps : unitDps;
 
     /// <summary>

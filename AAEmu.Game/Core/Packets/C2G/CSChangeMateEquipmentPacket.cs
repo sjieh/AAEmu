@@ -16,12 +16,19 @@ namespace AAEmu.Game.Core.Packets.C2G;
 /// </summary>
 public class CSChangeMateEquipmentPacket() : GamePacket(CSOffsets.CSChangeMateEquipmentPacket, 1)
 {
+    // SlotType.EquipmentMate is the value used by the server's persisted item containers. The
+    // 10.0.2 client sends 0xFC for the mate-equipment location, so keep the wire value separate and
+    // translate it only while resolving this packet's containers.
+    private const byte ClientMateEquipmentSlotType = 0xFC;
+
     private sealed class MateEquipRequest
     {
         public Item WireItem1;
         public Item WireItem2;
+        public byte WireSlot1Type;
         public SlotType Slot1Type;
         public byte Slot1;
+        public byte WireSlot2Type;
         public SlotType Slot2Type;
         public byte Slot2;
         public DateTime ExpireTime;
@@ -49,9 +56,11 @@ public class CSChangeMateEquipmentPacket() : GamePacket(CSOffsets.CSChangeMateEq
             };
             request.WireItem1.Read(stream);
             request.WireItem2.Read(stream);
-            request.Slot1Type = (SlotType)stream.ReadByte();
+            request.WireSlot1Type = stream.ReadByte();
+            request.Slot1Type = FromWireSlotType(request.WireSlot1Type);
             request.Slot1 = stream.ReadByte();
-            request.Slot2Type = (SlotType)stream.ReadByte();
+            request.WireSlot2Type = stream.ReadByte();
+            request.Slot2Type = FromWireSlotType(request.WireSlot2Type);
             request.Slot2 = stream.ReadByte();
             request.ExpireTime = stream.ReadDateTime();
             request.EchoItem1 = request.WireItem1.TemplateId != 0 ? request.WireItem1 : null;
@@ -87,13 +96,13 @@ public class CSChangeMateEquipmentPacket() : GamePacket(CSOffsets.CSChangeMateEq
                 new ItemAndLocation
                 {
                     Item = request.EchoItem1,
-                    SlotType = request.Slot1Type,
+                    SlotType = (SlotType)request.WireSlot1Type,
                     SlotNumber = request.Slot1
                 },
                 new ItemAndLocation
                 {
                     Item = request.EchoItem2,
-                    SlotType = request.Slot2Type,
+                    SlotType = (SlotType)request.WireSlot2Type,
                     SlotNumber = request.Slot2
                 },
                 replyTl,
@@ -118,11 +127,23 @@ public class CSChangeMateEquipmentPacket() : GamePacket(CSOffsets.CSChangeMateEq
     private static bool TryApply(Character character, Mate mate, MateEquipRequest request)
     {
         var container1 = ResolveContainer(character, mate, request.Slot1Type);
-        var container2 = request.Slot2Type == SlotType.EquipmentMate ? mate.Equipment : null;
+        var container2 = ResolveContainer(character, mate, request.Slot2Type);
         if (container1 == null || container2 == null)
         {
             Logger.Warn(
-                "ChangeMateEquipment: unsupported slots {0}#{1} <-> {2}#{3}",
+                "ChangeMateEquipment: unsupported slots {0}({1})#{2} <-> {3}({4})#{5}",
+                request.Slot1Type, request.WireSlot1Type, request.Slot1,
+                request.Slot2Type, request.WireSlot2Type, request.Slot2);
+            return false;
+        }
+
+        // The equipment exchange path below is for one inventory slot and one mate slot. In
+        // particular, don't let two slots in the same container fall through to Exchange: that
+        // path detaches the replaced item from the mate container and is not a same-container swap.
+        if (ReferenceEquals(container1, container2))
+        {
+            Logger.Warn(
+                "ChangeMateEquipment: expected inventory <-> mate equipment, got {0}#{1} <-> {2}#{3}",
                 request.Slot1Type, request.Slot1, request.Slot2Type, request.Slot2);
             return false;
         }
@@ -180,6 +201,15 @@ public class CSChangeMateEquipmentPacket() : GamePacket(CSOffsets.CSChangeMateEq
             SlotType.Inventory => character.Inventory.Bag,
             SlotType.EquipmentMate => mate.Equipment,
             _ => null
+        };
+    }
+
+    private static SlotType FromWireSlotType(byte slotType)
+    {
+        return slotType switch
+        {
+            ClientMateEquipmentSlotType => SlotType.EquipmentMate,
+            _ => (SlotType)slotType
         };
     }
 

@@ -14,6 +14,7 @@ using AAEmu.Game.Models.Game.Skills.Buffs;
 using AAEmu.Game.Models.Game.Skills.Effects.Enums;
 using AAEmu.Game.Models.Game.Units;
 using AAEmu.Game.Models.Game.World;
+using AAEmu.Game.Utils;
 
 using NLog;
 
@@ -36,6 +37,121 @@ public class MateManager(WorldInstance parentWorldInstance)
     public List<Mate> GetActiveMates(uint ownerId)
     {
         return _activeMates.GetValueOrDefault(ownerId) ?? [];
+    }
+
+    /// <summary>Moves the owner's active pets beside them after a portal landing.</summary>
+    public void MoveActiveMatesWithOwner(
+        Character owner,
+        WorldInstance destinationWorld,
+        float ownerX,
+        float ownerY,
+        float ownerZ,
+        float ownerYaw)
+    {
+        if (owner == null || destinationWorld == null)
+            return;
+
+        var mates = GetActiveMates(owner.Id).ToList();
+        if (mates.Count == 0)
+            return;
+
+        // Keep the pet beside the player without placing it across a zone boundary from the portal
+        // landing. The destination zone is already loaded for the character; an adjacent zone may not be.
+        var (spawnX, spawnY) = MathUtil.AddDistanceToFront(2f, ownerX, ownerY, ownerYaw);
+        var ownerZoneId = owner.Transform.ZoneId;
+        var candidateZoneId = WorldManager.Instance.GetZoneId(destinationWorld.Template, spawnX, spawnY);
+        if (candidateZoneId == 0 || candidateZoneId != ownerZoneId)
+        {
+            spawnX = ownerX;
+            spawnY = ownerY;
+        }
+
+        foreach (var mate in mates)
+        {
+            if (mate == null)
+                continue;
+
+            var changingWorld = !ReferenceEquals(World, destinationWorld);
+            if (changingWorld)
+            {
+                // A different player may be occupying another seat. Keep that rider and mount together
+                // in the source world instead of moving only the mount out from under them.
+                var hasOtherPassengers = mate.Passengers.Values.Any(passenger =>
+                    passenger._objId != 0 && passenger._objId != owner.ObjId);
+                if (hasOtherPassengers)
+                {
+                    Logger.Warn(
+                        "Portal did not move mate {0} to world {1}: it still has passengers",
+                        mate.ObjId, destinationWorld.Id);
+                    continue;
+                }
+
+                // Seat records are authoritative for normal mounts, but also check the transform
+                // tree so a stale or otherwise untracked passenger is not carried into another world.
+                if (mate.Transform.Children.Count > 0)
+                {
+                    Logger.Warn(
+                        "Portal did not move mate {0} to world {1}: it still has attached objects",
+                        mate.ObjId, destinationWorld.Id);
+                    continue;
+                }
+
+                var destinationMateManager = destinationWorld.MateManager;
+                if (destinationMateManager == null ||
+                    destinationMateManager.GetActiveMates(owner.Id).Any(existing => !ReferenceEquals(existing, mate)))
+                {
+                    Logger.Warn(
+                        "Portal did not move mate {0} to world {1}: owner already has an active mate there",
+                        mate.ObjId, destinationWorld.Id);
+                    continue;
+                }
+            }
+
+            mate.StopOrderedAttack();
+            WithdrawMateFromZone(mate);
+            mate.Hide();
+
+            // A mate can be parented by an attachment or other transform. The portal destination
+            // is in world coordinates, so clear any old parent before assigning the landing point.
+            mate.Transform.Parent = null;
+
+            if (changingWorld)
+            {
+                World.RemoveObject(mate);
+                RemoveActiveMateReference(owner.Id, mate);
+                mate.Transform.InstanceId = destinationWorld.Id;
+
+                var destinationMates = destinationWorld.MateManager._activeMates;
+                if (!destinationMates.TryGetValue(owner.Id, out var destinationMateList))
+                {
+                    destinationMateList = [];
+                    destinationMates.Add(owner.Id, destinationMateList);
+                }
+                destinationMateList.Add(mate);
+            }
+
+            mate.Transform.Local.SetPosition(spawnX, spawnY, ownerZ, 0f, 0f, ownerYaw);
+
+            if (changingWorld)
+                mate.Spawn();
+            else
+                mate.Show();
+
+            AnnounceMateToZone(mate);
+            Logger.Info(
+                "Moved active mate {0} with owner {1} through portal to world {2} at ({3:0.0}, {4:0.0}, {5:0.0})",
+                mate.ObjId, owner.Id, destinationWorld.Id, spawnX, spawnY, ownerZ);
+        }
+    }
+
+    private void RemoveActiveMateReference(uint ownerId, Mate mate)
+    {
+        if (!_activeMates.TryGetValue(ownerId, out var activeMateList))
+            return;
+
+        activeMateList.Remove(mate);
+        if (activeMateList.Count == 0)
+            _activeMates.Remove(ownerId);
     }
 
     /// <summary>
@@ -310,6 +426,19 @@ public class MateManager(WorldInstance parentWorldInstance)
         mate.Spawn();
         AnnounceMateToZone(mate);
 
+        // Pets can stop following, or be displaced far from their owner. Check regularly so the
+        // cleanup also runs when neither unit sends another movement update.
+        mate.DistanceCheckTask = new Models.Tasks.Mate.MateDistanceCheckTask(mate);
+        if (!TaskManager.Instance.Schedule(
+                mate.DistanceCheckTask,
+                TimeSpan.FromSeconds(1),
+                TimeSpan.FromSeconds(1),
+                -1))
+        {
+            mate.DistanceCheckTask = null;
+            Logger.Warn("Could not schedule distance cleanup for mate {0} owned by {1}", mate.ObjId, owner.ObjId);
+        }
+
         Logger.Debug($"Mount spawned. ownerObjId: {owner.ObjId}, tlId: {mate.TlId}, mateObjId: {mate.ObjId}");
     }
 
@@ -366,6 +495,9 @@ public class MateManager(WorldInstance parentWorldInstance)
         if (mateInfo == null)
             return; // skip if invalid tlId
 
+        mateInfo.DistanceCheckTask?.Cancel();
+        mateInfo.DistanceCheckTask = null;
+
         foreach (var ati in mateInfo.Passengers.ToList())
         {
             UnMountMate(WorldManager.Instance.GetCharacterByObjId(ati.Value._objId), mateInfo.TlId, ati.Key, AttachUnitReason.SlaveBinding);
@@ -401,6 +533,9 @@ public class MateManager(WorldInstance parentWorldInstance)
         if (character == null) return;
         foreach (var mate in GetActiveMates(character.Id))
         {
+            mate.DistanceCheckTask?.Cancel();
+            mate.DistanceCheckTask = null;
+
             foreach (var ati in mate.Passengers.ToList())
                 UnMountMate(WorldManager.Instance.GetCharacterByObjId(ati.Value._objId), mate.TlId, ati.Key,
                     AttachUnitReason.SlaveBinding);

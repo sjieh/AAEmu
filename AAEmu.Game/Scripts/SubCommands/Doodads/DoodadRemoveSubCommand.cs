@@ -23,7 +23,7 @@ public class DoodadRemoveSubCommand : SubCommandBase
 
     public override void Execute(ICharacter character, string triggerArgument, IDictionary<string, ParameterValue> parameters, IMessageOutput messageOutput)
     {
-        // Запускаем метод в отдельной задаче (нити)
+        // Run the method in a separate task (thread).
         Task.Run(() =>
         {
             try
@@ -39,7 +39,7 @@ public class DoodadRemoveSubCommand : SubCommandBase
             }
             catch (Exception ex)
             {
-                // Обработка исключения, например, запись в лог
+                // Handle the exception, for example by writing it to the log.
                 Logger.Error($"Ошибка при выполнении метода: {ex.Message}");
             }
         });
@@ -61,7 +61,7 @@ public class DoodadRemoveSubCommand : SubCommandBase
         foreach (var doodad in doodadsInWorld.Where(d => d.TemplateId == nearestDoodad.TemplateId))
         {
             // Remove Doodad
-            doodad.Spawner.Id = 0xffffffff; // removed from the game manually (укажем, что не надо сохранять в файл doodad_spawns_new.json командой /save all)
+            doodad.Spawner.Id = 0xffffffff; // Removed manually; /save all should not write this entry to doodad_spawns_new.json.
             doodad.Hide();
             SendMessage(messageOutput, $"Doodad @DOODAD_NAME({doodad.TemplateId}), ObjId: {doodad.ObjId}, TemplateId:{doodad.TemplateId} removed successfully");
             Logger.Warn($"Doodad @DOODAD_NAME({doodad.TemplateId}), ObjId: {doodad.ObjId}, TemplateId:{doodad.TemplateId} removed successfully");
@@ -83,7 +83,7 @@ public class DoodadRemoveSubCommand : SubCommandBase
         }
 
         // Remove Doodad
-        doodad.Spawner.Id = 0xffffffff; // removed from the game manually (укажем, что не надо сохранять в файл doodad_spawns_new.json командой /save all)
+        doodad.Spawner.Id = 0xffffffff; // Removed manually; /save all should not write this entry to doodad_spawns_new.json.
         doodad.Hide();
         SendMessage(messageOutput, $"Doodad @DOODAD_NAME({doodad.TemplateId}), ObjId: {doodad.ObjId}, TemplateId:{doodad.TemplateId} removed successfully");
         Logger.Warn($"Doodad @DOODAD_NAME({doodad.TemplateId}), ObjId: {doodad.ObjId}, TemplateId:{doodad.TemplateId} removed successfully");
@@ -91,20 +91,20 @@ public class DoodadRemoveSubCommand : SubCommandBase
 
     private static Doodad GetNearestDoodad(ICharacter character, float radius)
     {
-        // Получаем список объектов Doodad
+        // Get the list of doodad objects.
         var doodads = WorldManager.GetAround<Doodad>((GameObject)character, radius);
 
-        // Инициализируем переменные для хранения ближайшего объекта и расстояния до него
+        // Initialize variables for the nearest object and its distance.
         Doodad nearestDoodad = null;
         var minDistance = float.MaxValue;
 
-        // Проходим по списку объектов
+        // Iterate through the objects.
         foreach (var doodad in doodads)
         {
-            // Вычисляем расстояние между персонажем и текущим объектом Doodad
+            // Calculate the distance between the character and the current doodad.
             var distance = Vector3.Distance(character.Transform.World.Position, doodad.Transform.World.Position);
 
-            // Если расстояние меньше текущего минимального, обновляем ближайший объект и минимальное расстояние
+            // If this distance is shorter, update the nearest object and the minimum distance.
             if (!(distance < minDistance))
             {
                 continue;

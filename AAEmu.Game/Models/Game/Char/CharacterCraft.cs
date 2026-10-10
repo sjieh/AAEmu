@@ -422,7 +422,7 @@ public class CharacterCraft
         skill.CancellationRequested -= OnSkillCancelled;
 
         //Owner.Quests.OnCraft(_craft); // TODO added for quest Id=6024
-        // инициируем событие
+        // Raise the event.
         //Task.Run(() =>
         //{
         //    if (_craft != null)

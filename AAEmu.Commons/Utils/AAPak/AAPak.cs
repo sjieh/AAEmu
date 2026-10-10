@@ -1084,6 +1084,12 @@ public class AAPak
             // if (PakType != PakFileType.PakTypeA) readOnly = true;
             _header.LoadRawFAT();
             _header.ReadFileTable();
+
+            // The file table is now represented by pakFiles and extraFiles. Drop the raw
+            // serialized table so the parsed pak does not retain a second copy of it.
+            // WriteToFAT rebuilds this stream from those parsed entries if the pak is edited.
+            _header.FAT.Dispose();
+            _header.FAT = new MemoryStream();
         }
         else
         {

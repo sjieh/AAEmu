@@ -63,6 +63,87 @@ public partial class Character : Unit, ICharacter
     /// Equipment (Part) is never queued; it paints with region interest.
     /// </summary>
     private readonly ConcurrentDictionary<uint, Slave> _pendingSlaves = new();
+    /// <summary>
+    /// A single pending player cast. New input replaces the old request so holding a key cannot
+    /// build an unbounded backlog; the pending request fires when its shared GCD expires.
+    /// </summary>
+    private readonly object _pendingSkillCastLock = new();
+    private Action _pendingSkillCast;
+    private bool _pendingSkillCastScheduled;
+    private long _pendingSkillCastGeneration;
+    private int _pendingTeleportDoodadRefresh;
+
+    /// <summary>
+    /// Marks a same-instance zone transition whose client acknowledgement should refresh doodads.
+    /// </summary>
+    public void SetPendingTeleportDoodadRefresh(bool pending) =>
+        System.Threading.Interlocked.Exchange(ref _pendingTeleportDoodadRefresh, pending ? 1 : 0);
+
+    /// <summary>Consumes the one-shot post-transition doodad refresh request.</summary>
+    public bool ConsumePendingTeleportDoodadRefresh() =>
+        System.Threading.Interlocked.Exchange(ref _pendingTeleportDoodadRefresh, 0) != 0;
+
+    public void QueuePendingSkillCast(Action cast, TimeSpan delay)
+    {
+        if (cast == null)
+            return;
+
+        long generation;
+        lock (_pendingSkillCastLock)
+        {
+            _pendingSkillCast = cast;
+            if (_pendingSkillCastScheduled)
+                return;
+            _pendingSkillCastScheduled = true;
+            generation = ++_pendingSkillCastGeneration;
+        }
+
+        if (delay < TimeSpan.FromMilliseconds(1))
+            delay = TimeSpan.FromMilliseconds(1);
+
+        if (!TaskManager.Instance.Schedule(
+                new AAEmu.Game.Models.Tasks.Skills.PendingSkillCastTask(this, generation), delay))
+        {
+            lock (_pendingSkillCastLock)
+            {
+                if (_pendingSkillCastGeneration == generation)
+                {
+                    _pendingSkillCast = null;
+                    _pendingSkillCastScheduled = false;
+                }
+            }
+        }
+    }
+
+    /// <summary>Discards a queued cast after a later skill was successfully accepted.</summary>
+    public void ClearPendingSkillCast()
+    {
+        lock (_pendingSkillCastLock)
+        {
+            _pendingSkillCast = null;
+            _pendingSkillCastScheduled = false;
+            _pendingSkillCastGeneration++;
+        }
+    }
+
+    internal void ExecutePendingSkillCast(long generation)
+    {
+        Action cast;
+        lock (_pendingSkillCastLock)
+        {
+            if (!_pendingSkillCastScheduled || generation != _pendingSkillCastGeneration)
+                return;
+
+            cast = _pendingSkillCast;
+            _pendingSkillCast = null;
+            _pendingSkillCastScheduled = false;
+        }
+
+        if (cast == null || Connection?.ActiveChar != this)
+            return;
+
+        cast();
+    }
 
     /// <summary>
     /// ObjIds that already received SCUnitState and still count toward AAEMU_MIRROR_NPC_MAX.
@@ -928,7 +1009,7 @@ public partial class Character : Unit, ICharacter
     public int Gift { get; set; }
     public int Experience { get; private set; }
     public int RecoverableExp { get; set; }
-    public DateTime Created { get; set; } // время создания персонажа
+    public DateTime Created { get; set; } // Character creation time.
 
     /// <summary>
     /// Seconds this character has been played, across every session. Reported by SCPlayerGameData, whose
@@ -958,7 +1039,7 @@ public partial class Character : Unit, ICharacter
         TotalPlayTime = GetTotalPlayTimeSeconds();
         _sessionStartedAt = DateTime.UtcNow;
     }
-    public DateTime Updated { get; set; } // время внесения изменений
+    public DateTime Updated { get; set; } // Time of the last update.
 
     public uint ReturnDistrictId { get; set; }
     public uint ResurrectionDistrictId { get; set; }
@@ -1029,7 +1110,7 @@ public partial class Character : Unit, ICharacter
     public CharacterHeirSkills HeirSkills { get; set; }
     public CharacterSkillActiveTypes SkillActiveTypes { get; set; }
     public CharacterCraft Craft { get; set; }
-    public uint SubZoneId { get; set; } // понадобилось хранить для составления точек Memory Tome (Recall)
+    public uint SubZoneId { get; set; } // Stored to build Memory Tome (Recall) points.
     public int AccessLevel { get; set; }
 
     private int? _gearScoreCache;
@@ -1549,31 +1630,38 @@ public partial class Character : Unit, ICharacter
         {
             double res = 0f;
             res = CalculateWithBonuses(res, UnitAttribute.HealMul);
+            // heal_mul_only_heal is separate from healing-skill damage output. Apply it only to HealEffect's
+            // HealMul path; DamageEffect uses HealDamageMul and must not receive this modifier.
+            res += CalculateWithBonuses(0d, UnitAttribute.HealMulOnlyHeal);
+            res += PleasureResourceModifierDelta(UnitAttribute.HealMulOnlyHeal);
             res = (res + 1000.00000000) / 1000;
             return (float)res;
         }
     }
 
-    public override float LevelDps
+    public override float LevelDps => GetLevelDpsForAbilityLevel(Level);
+
+    /// <summary>
+    /// Evaluates the character level-damage formula at the ability level used by a skill rank.
+    /// Skill damage uses its rank's ability-level breakpoint rather than the character's current level.
+    /// </summary>
+    public float GetLevelDpsForAbilityLevel(int abilityLevel)
     {
-        get
+        var formula =
+            FormulaManager.Instance.GetUnitFormula(FormulaOwnerType.Character, UnitFormulaKind.LevelDps);
+        var formulaLevel = Math.Max(1, abilityLevel);
+        var parameters = new Dictionary<string, double>
         {
-            var formula =
-                FormulaManager.Instance.GetUnitFormula(FormulaOwnerType.Character, UnitFormulaKind.LevelDps);
-            var parameters = new Dictionary<string, double>
-            {
-                ["level"] = Level,
-                ["str"] = Str,
-                ["dex"] = Dex,
-                ["sta"] = Sta,
-                ["int"] = Int,
-                ["spi"] = Spi,
-                ["fai"] = Fai,
-                ["ab_level"] = Level // TODO : Make AbilityLevel
-            };
-            var res = formula.Evaluate(parameters);
-            return (float)res;
-        }
+            ["level"] = formulaLevel,
+            ["str"] = Str,
+            ["dex"] = Dex,
+            ["sta"] = Sta,
+            ["int"] = Int,
+            ["spi"] = Spi,
+            ["fai"] = Fai,
+            ["ab_level"] = formulaLevel
+        };
+        return (float)formula.Evaluate(parameters);
     }
 
     [UnitAttribute(UnitAttribute.MainhandDps)]
@@ -1583,7 +1671,7 @@ public partial class Character : Unit, ICharacter
         {
             var weapon = (Weapon)Inventory.Equipment.GetItemBySlot((int)EquipmentItemSlot.Mainhand);
             var res = (weapon?.Dps ?? 0) * 1000f;
-            res += Str / 5f * 1000f;
+            res += Str / 4f * 1000f;
             res = (float)CalculateWithBonuses(res, UnitAttribute.MainhandDps);
 
             return (int)res;
@@ -1635,7 +1723,7 @@ public partial class Character : Unit, ICharacter
         {
             var weapon = (Weapon)Inventory.Equipment.GetItemBySlot((int)EquipmentItemSlot.Ranged);
             var res = (weapon?.Dps ?? 0) * 1000f;
-            res += Dex / 5f * 1000f;
+            res += Dex / 4f * 1000f;
             res = (float)CalculateWithBonuses(res, UnitAttribute.RangedDps);
 
             return (int)res;
@@ -1673,7 +1761,7 @@ public partial class Character : Unit, ICharacter
         {
             var weapon = (Weapon)Inventory.Equipment.GetItemBySlot((int)EquipmentItemSlot.Mainhand);
             var res = (weapon?.MDps ?? 0) * 1000f;
-            res += Int / 5f * 1000f;
+            res += Int / 4f * 1000f;
             res = (float)CalculateWithBonuses(res, UnitAttribute.SpellDps);
 
             return (int)res;
@@ -1711,7 +1799,7 @@ public partial class Character : Unit, ICharacter
         {
             var weapon = (Weapon)Inventory.Equipment.GetItemBySlot((int)EquipmentItemSlot.Mainhand);
             var res = (weapon?.HDps ?? 0) * 1000;
-            res += Spi / 5f * 1000f;
+            res += Spi / 4f * 1000f;
             res = CalculateWithBonuses(res, UnitAttribute.HealDps);
             return (int)res;
         }
@@ -4318,7 +4406,7 @@ public partial class Character : Unit, ICharacter
         {
             var unitModelParams = ModelParams.Write(new PacketStream()).GetBytes();
 
-            Updated = DateTime.UtcNow; // обновим время записи информации
+            Updated = DateTime.UtcNow; // Update the record timestamp.
 
             using (var command = connection.CreateCommand())
             {

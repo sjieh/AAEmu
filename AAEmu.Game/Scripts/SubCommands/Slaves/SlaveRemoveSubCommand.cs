@@ -47,7 +47,7 @@ public class SlaveRemoveSubCommand : SubCommandBase
         if (slave.Spawner != null)
         {
             slave.Spawner.Id =
-                0xffffffff; // removed from the game manually (укажем, что не надо сохранять в файл npc_spawns_new.json командой /save all)
+                0xffffffff; // Removed manually; /save all should not write this entry to npc_spawns_new.json.
         }
 
         slave.Hide();
