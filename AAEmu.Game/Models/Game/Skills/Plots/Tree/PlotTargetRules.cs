@@ -1,4 +1,4 @@
-using AAEmu.Game.Models.Game.Skills.Utils;
+﻿using AAEmu.Game.Models.Game.Skills.Utils;
 
 namespace AAEmu.Game.Models.Game.Skills.Plots.Tree;
 
@@ -55,4 +55,15 @@ public static class PlotTargetRules
     /// their effects to nobody. A row that names a relation gets that relation's answer.
     /// </remarks>
     public static bool AllowsNeutral(SkillTargetRelation relation) => relation != SkillTargetRelation.Any;
+
+    /// <summary>
+    /// Whether <paramref name="unitTypeFlag"/> survives the plot's unit-kind mask (methods 5/6/7).
+    /// </summary>
+    /// <remarks>
+    /// Mask 0 is "unset" in the shipped rows (same idea as relation 127): applying
+    /// <c>(flag &amp; 0) != 0</c> would drop every unit and empty the AoE. A non-zero mask keeps the
+    /// bit test against <see cref="Units.UnitTypeFlag"/>.
+    /// </remarks>
+    public static bool PassesUnitTypeMask(byte unitTypeFlag, byte mask) =>
+        mask == 0 || (unitTypeFlag & mask) != 0;
 }
