@@ -1499,15 +1499,19 @@ public class HousingManager(
                 placingExpeditionResidence,
                 ItemTaskType.HouseCreation,
                 autoUseAaPoint,
-                out var placementContributionCharged))
+                out var placementCharge))
             return;
 
-        if (connection.ActiveChar.Inventory.Bag.ConsumeItem(ItemTaskType.HouseBuilding, sourceDesignItem.TemplateId, 1, sourceDesignItem) <= 0)
+        ItemConsumptionPlan designPlan;
+        lock (connection.ActiveChar.Inventory.MutationSyncRoot)
         {
-            RefundHousingTaxCharge(
-                connection.ActiveChar, totalTaxAmountDue, placingExpeditionResidence, placementContributionCharged);
-            connection.ActiveChar.SendErrorMessage(ErrorMessageType.BagInvalidItem);
-            return;
+            if (!connection.ActiveChar.Inventory.TryPlanBagConsumption(
+                    sourceDesignItem.TemplateId, 1, out designPlan))
+            {
+                RefundHousingTaxCharge(connection.ActiveChar, placementCharge);
+                connection.ActiveChar.SendErrorMessage(ErrorMessageType.BagInvalidItem);
+                return;
+            }
         }
 
         // Spawn the actual house
@@ -1562,9 +1566,16 @@ public class HousingManager(
             HousingZoneBridge.NotifyZoneHouseCreated(house);
         UpdateTaxInfo(house);
 
-        // Prestige (and gold/seal) already left the wallet — persist the new row before the next
-        // SaveManager tick so a crash cannot keep the debit without the house.
-        SaveHouseNow(house);
+        // House row + wallet / seals / design must land together; a house-only commit can keep the
+        // building while a crash restores the payment and design from MySQL.
+        if (!TryPersistNewHouseWithPayment(connection.ActiveChar, house, placementCharge, designPlan))
+        {
+            _houses.Remove(house.Id);
+            _housesTl.Remove(house.TlId);
+            house.Delete();
+            connection.ActiveChar.SendErrorMessage(ErrorMessageType.HouseCannotCreate);
+            return;
+        }
 
         if (HousingGameData.Instance.IsExpeditionResidenceTemplate(designId) && connection.ActiveChar.Expedition != null)
         {
@@ -1855,45 +1866,38 @@ public class HousingManager(
         int taxCopper,
         ItemTaskType taskType,
         bool useAaPoint,
-        out int contributionCharged) =>
+        out HousingTaxCharge charge) =>
         TryChargeHousingTax(
             character,
             taxCopper,
             HousingGameData.Instance.IsExpeditionResidenceTemplate(house.TemplateId),
             taskType,
             useAaPoint,
-            out contributionCharged);
+            out charge);
 
     /// <summary>
-    /// Extends protection after a successful tax charge and writes the house row immediately so a
-    /// prestige debit cannot outlive an unsaved <c>ProtectionEndDate</c>.
+    /// Extends protection after a successful tax charge and writes the house row with the payment
+    /// so a debit cannot outlive an unsaved <c>ProtectionEndDate</c> (or the reverse for gold/AA).
     /// </summary>
-    public bool CompleteHouseTaxPayment(Character character, House house, int taxCopper, int contributionCharged)
+    public bool CompleteHouseTaxPayment(Character character, House house, HousingTaxCharge charge)
     {
         if (house == null)
             return false;
+        charge ??= HousingTaxCharge.Empty;
+        var previousProtectionEnd = house.ProtectionEndDate;
         if (!PayWeeklyTax(house))
         {
-            RefundHousingTaxCharge(
-                character,
-                taxCopper,
-                HousingGameData.Instance.IsExpeditionResidenceTemplate(house.TemplateId),
-                contributionCharged);
+            RefundHousingTaxCharge(character, charge);
             return false;
         }
 
-        return TryPersistHouseAfterTaxCharge(
-            character,
-            house,
-            taxCopper,
-            HousingGameData.Instance.IsExpeditionResidenceTemplate(house.TemplateId),
-            contributionCharged);
+        return TryPersistHouseAfterTaxCharge(character, house, charge, previousProtectionEnd);
     }
 
     /// <summary>
     /// Charges placement or upkeep tax in the currency the house family uses: guild residences debit
-    /// prestige (<c>contribution_gold_ratio</c>); other houses use tax certificates when the tax-item
-    /// feature is on, otherwise gold / AA points.
+    /// prestige (<c>contribution_gold_ratio</c>); other houses plan tax certificates when the tax-item
+    /// feature is on (applied when the house commits), otherwise gold / AA points.
     /// </summary>
     private bool TryChargeHousingTax(
         Character character,
@@ -1901,9 +1905,9 @@ public class HousingManager(
         bool isExpeditionResidence,
         ItemTaskType taskType,
         bool useAaPoint,
-        out int contributionCharged)
+        out HousingTaxCharge charge)
     {
-        contributionCharged = 0;
+        charge = new HousingTaxCharge { TaskType = taskType };
         if (taxCopper <= 0)
             return true;
 
@@ -1917,7 +1921,7 @@ public class HousingManager(
                 return false;
             }
 
-            contributionCharged = cost;
+            charge.ContributionPoints = cost;
             return true;
         }
 
@@ -1927,34 +1931,42 @@ public class HousingManager(
             var totalCertsCost = HousingTaxPaymentRules.CurrencyUnits(taxCopper, ratio);
             var userTaxCount = character.Inventory.GetItemsCount(SlotType.Inventory, Item.TaxCertificate);
             var userBoundTaxCount = character.Inventory.GetItemsCount(SlotType.Inventory, Item.BoundTaxCertificate);
-            var totalUserTaxCount = userTaxCount + userBoundTaxCount;
-            var consumedCerts = totalCertsCost;
-            if (totalCertsCost > totalUserTaxCount)
+            if (totalCertsCost > userTaxCount + userBoundTaxCount)
             {
                 character.SendErrorMessage(ErrorMessageType.MailNotEnoughMoneyToPayTaxes);
                 return false;
             }
 
-            var c = consumedCerts;
-            if (userBoundTaxCount > 0 && c > 0)
+            lock (character.Inventory.MutationSyncRoot)
             {
-                if (c > userBoundTaxCount)
-                    c = userBoundTaxCount;
-                character.Inventory.Bag.ConsumeItem(taskType, Item.BoundTaxCertificate, c, null);
-                consumedCerts -= c;
+                var remaining = totalCertsCost;
+                if (userBoundTaxCount > 0 && remaining > 0)
+                {
+                    var bound = Math.Min(remaining, userBoundTaxCount);
+                    if (!character.Inventory.TryPlanBagConsumption(Item.BoundTaxCertificate, bound, out var boundPlan))
+                    {
+                        character.SendErrorMessage(ErrorMessageType.MailNotEnoughMoneyToPayTaxes);
+                        return false;
+                    }
+
+                    charge.SealPlans.Add(boundPlan);
+                    charge.BoundCertificates = bound;
+                    remaining -= bound;
+                }
+
+                if (remaining > 0)
+                {
+                    if (!character.Inventory.TryPlanBagConsumption(Item.TaxCertificate, remaining, out var taxPlan))
+                    {
+                        character.SendErrorMessage(ErrorMessageType.MailNotEnoughMoneyToPayTaxes);
+                        return false;
+                    }
+
+                    charge.SealPlans.Add(taxPlan);
+                    charge.TaxCertificates = remaining;
+                }
             }
 
-            c = consumedCerts;
-            if (userTaxCount > 0 && c > 0)
-            {
-                if (c > userTaxCount)
-                    c = userTaxCount;
-                character.Inventory.Bag.ConsumeItem(taskType, Item.TaxCertificate, c, null);
-                consumedCerts -= c;
-            }
-
-            if (consumedCerts != 0)
-                Logger.Error("Something went wrong when paying housing tax for {0}", character.Name);
             return true;
         }
 
@@ -1965,9 +1977,15 @@ public class HousingManager(
             return false;
         }
 
-        return useAaPoint
+        var paid = useAaPoint
             ? character.SubtractAAPoint(SlotType.Inventory, taxCopper, taskType)
             : character.SubtractMoney(SlotType.Inventory, taxCopper, taskType);
+        if (!paid)
+            return false;
+
+        charge.CopperAmount = taxCopper;
+        charge.UsedAaPoint = useAaPoint;
+        return true;
     }
 
     public bool CalculateBuildingTaxInfo(uint accountId, HousingTemplate newHouseTemplate, bool buildingNewHouse, out int totalTaxToPay, out int heavyHouseCount, out int normalHouseCount, out int hostileTaxRate, out int oneWeekTaxCount, ushort? zoneId = null, float x = 0, float y = 0)
@@ -2205,16 +2223,17 @@ public class HousingManager(
                 isExpeditionResidence,
                 ItemTaskType.HouseDeposit,
                 useAaPoint,
-                out var contributionCharged))
+                out var charge))
             return false;
 
+        var previousProtectionEnd = house.ProtectionEndDate;
         if (!PayWeeklyTax(house))
         {
-            RefundHousingTaxCharge(character, weeklyTax, isExpeditionResidence, contributionCharged);
+            RefundHousingTaxCharge(character, charge);
             return false;
         }
 
-        if (!TryPersistHouseAfterTaxCharge(character, house, weeklyTax, isExpeditionResidence, contributionCharged))
+        if (!TryPersistHouseAfterTaxCharge(character, house, charge, previousProtectionEnd))
             return false;
 
         UpdateTaxInfo(house);
@@ -2716,43 +2735,130 @@ public class HousingManager(
     private bool TryPersistHouseAfterTaxCharge(
         Character character,
         House house,
-        int taxCopper,
-        bool isExpeditionResidence,
-        int contributionCharged)
+        HousingTaxCharge charge,
+        DateTime previousProtectionEnd)
     {
         try
         {
-            SaveHouseNow(house);
+            PersistHouseWithTaxPayment(character, house, charge, designPlan: null);
             return true;
         }
         catch (Exception ex)
         {
-            Logger.Error(ex, "Failed to persist house {0} after tax charge; refunding payment", house.Id);
-            RefundHousingTaxCharge(character, taxCopper, isExpeditionResidence, contributionCharged);
+            Logger.Error(ex, "Failed to persist house {0} after tax charge; restoring protection and refunding", house.Id);
+            house.ProtectionEndDate = previousProtectionEnd;
+            RefundHousingTaxCharge(character, charge);
             return false;
         }
     }
 
-    private static void RefundHousingTaxCharge(
+    private bool TryPersistNewHouseWithPayment(
         Character character,
-        int taxCopper,
-        bool isExpeditionResidence,
-        int contributionCharged)
+        House house,
+        HousingTaxCharge charge,
+        ItemConsumptionPlan designPlan)
     {
-        if (character == null || taxCopper <= 0)
-            return;
-
-        if (HousingTaxPaymentRules.UsesContributionTax(isExpeditionResidence))
+        try
         {
-            if (contributionCharged > 0)
-                ExpeditionManager.Instance.TryChangeContributionPoints(character, contributionCharged, false);
+            PersistHouseWithTaxPayment(character, house, charge, designPlan);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error(ex, "Failed to persist new house {0} with payment; refunding", house.Id);
+            RefundHousingTaxCharge(character, charge);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Commits the house row with any gold/AA wallet change and planned seal/design item rows.
+    /// </summary>
+    private void PersistHouseWithTaxPayment(
+        Character character,
+        House house,
+        HousingTaxCharge charge,
+        ItemConsumptionPlan designPlan)
+    {
+        charge ??= HousingTaxCharge.Empty;
+        var sealPlans = charge.SealPlans;
+        var needsItemPlans = sealPlans.Count > 0 || designPlan != null;
+        var needsCharacterSave = charge.RequiresCharacterSave && character != null;
+
+        if (!needsItemPlans && !needsCharacterSave)
+        {
+            SaveHouseNow(house);
             return;
         }
 
-        // Seal / gold placement refunds are rare (design consume failure). Seal stacks are not
-        // reconstructed here; gold returns the copper bill.
-        if (!FeaturesManager.Fsets.TaxItem)
-            character.ChangeMoney(SlotType.Inventory, taxCopper);
+        if (character == null)
+            throw new InvalidOperationException("Housing tax payment persistence requires a character when wallet or items change.");
+
+        List<ItemConsumptionPublication> publications = null;
+        lock (character.Inventory.MutationSyncRoot)
+        {
+            publications = WithPersistenceOperation(() =>
+            {
+                var snapshots = new List<ItemPersistenceSnapshot>();
+                foreach (var plan in sealPlans)
+                    snapshots.AddRange(plan.CapturePersistenceSnapshots(itemManager));
+                if (designPlan != null)
+                    snapshots.AddRange(designPlan.CapturePersistenceSnapshots(itemManager));
+
+                using var connection = MySQL.CreateConnection();
+                using var transaction = connection.BeginTransaction();
+                if (!house.Save(connection, transaction))
+                    throw new InvalidOperationException($"House {house.Id} failed to save during tax payment persistence.");
+                if (needsCharacterSave)
+                    character.Save(connection, transaction);
+                if (snapshots.Count > 0)
+                    itemManager.PersistSnapshots(connection, transaction, snapshots);
+                transaction.Commit();
+
+                var applied = new List<ItemConsumptionPublication>();
+                foreach (var plan in sealPlans)
+                    applied.Add(plan.ApplyCommitted(charge.TaskType));
+                if (designPlan != null)
+                    applied.Add(designPlan.ApplyCommitted(ItemTaskType.HouseBuilding));
+                foreach (var publication in applied)
+                    publication.PublishPackets();
+                return applied;
+            });
+        }
+
+        if (publications == null)
+            return;
+        foreach (var publication in publications)
+        {
+            try
+            {
+                publication.PublishCallbacks();
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Failed to publish housing tax item callbacks for character {0}", character.Id);
+            }
+        }
+    }
+
+    private static void RefundHousingTaxCharge(Character character, HousingTaxCharge charge)
+    {
+        if (character == null || charge == null || charge.IsEmpty)
+            return;
+
+        switch (HousingTaxPaymentRules.RefundKind(charge))
+        {
+            case HousingTaxRefundKind.Contribution:
+                ExpeditionManager.Instance.TryChangeContributionPoints(character, charge.ContributionPoints, false);
+                break;
+            case HousingTaxRefundKind.AaPoint:
+                character.AddAAPoint(SlotType.Inventory, charge.CopperAmount, charge.TaskType);
+                break;
+            case HousingTaxRefundKind.Gold:
+                character.ChangeMoney(SlotType.Inventory, charge.CopperAmount, charge.TaskType);
+                break;
+        }
+        // Pending seal / design plans were never applied; abandoning them restores nothing.
     }
 
     /// <summary>
