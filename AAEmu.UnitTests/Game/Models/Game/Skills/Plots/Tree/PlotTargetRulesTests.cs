@@ -40,6 +40,21 @@ public class PlotTargetRulesTests
     }
 
     [Test]
+    public async Task UnitTypeMaskZero_AllowsEveryKind()
+    {
+        // Unset mask must not empty the AoE: (flag & 0) != 0 is never true.
+        await Assert.That(PlotTargetRules.PassesUnitTypeMask(2, 0)).IsTrue();
+        await Assert.That(PlotTargetRules.PassesUnitTypeMask(1, 0)).IsTrue();
+    }
+
+    [Test]
+    public async Task UnitTypeMask_KeepsMatchingBitsOnly()
+    {
+        await Assert.That(PlotTargetRules.PassesUnitTypeMask(2, 111)).IsTrue(); // Npc in 111
+        await Assert.That(PlotTargetRules.PassesUnitTypeMask(16, 111)).IsFalse(); // Transfer not in 111
+    }
+
+    [Test]
     public async Task OnlyMyPet_KeepsTheCastersPetOnly()
     {
         // Plot 3005, 사람이 자신의 펫한테 기술 사용 ("a player uses a skill on their own pet").

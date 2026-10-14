@@ -1,4 +1,4 @@
-namespace AAEmu.Game.Models.Game.Skills;
+﻿namespace AAEmu.Game.Models.Game.Skills;
 
 /// <summary>Equipment slot selected by the authored <c>weapon_gcd_id</c> skill field.</summary>
 internal enum WeaponGcdId
