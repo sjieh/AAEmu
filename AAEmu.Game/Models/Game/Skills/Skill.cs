@@ -430,7 +430,6 @@ public class Skill
         // skill_reqs: a buff or buff tag on the caster or on the target that forbids or requires the cast
         // (rooted/stunned/fear "cannot use while X", gliding "only while X"). Checked once the target is
         // resolved, because 91 of the 338 rows read the target.
-        // TEMPORARY: Ignore area-peace restrictions while NPC interactions are being investigated.
         if (!SkillRequirementRules.AllowsCast(
                 SkillManager.Instance.GetSkillRequirements(Template.Id),
                 requirement => requirement.BuffId > 0 &&
@@ -440,12 +439,15 @@ public class Skill
                                (requirement.OnTarget ? target.Buffs.CheckBuffTag(requirement.BuffTagId)
                                    : caster.Buffs.CheckBuffTag(requirement.BuffTagId)),
                 out var requirementMessage,
-                requirement => SkillRequirementRules.IsAreaPeaceZoneRestriction(requirement)))
+                out var failedRequirementId))
         {
-            Logger.Trace("Skill {0} blocked by a skill_reqs row for {1}: {2}",
-                Template.Id, caster.Name, requirementMessage);
+            Logger.Trace("Skill {0} blocked by a skill_reqs row for {1}: {2} (req={3})",
+                Template.Id, caster.Name, requirementMessage, failedRequirementId);
+            // Toast from the row message. Do not put skill_reqs.id in the ushort — id 25 is also
+            // ErrorMessageType.BagFull and the client shows bag_full when that detail is set.
             if (character != null && !string.IsNullOrEmpty(requirementMessage))
                 character.SendMessage(requirementMessage);
+            Cancelled = true;
             return SkillResult.SkillReqFail;
         }
 
@@ -1786,6 +1788,10 @@ public class Skill
                 doodad.OnSkillHit(caster, Id);
             }
         }
+
+        // Guild worldgate list-open (and similar): func_skill_id with an empty skill_effects row.
+        // Client casts that skill at the doodad; drive Doodad.Use so the phase func (portal list) runs.
+        DoodadSkillLessUseRules.DriveEffectlessDoodadUses(caster, Id, Template.Effects.Count, possibleTargets);
 
         CompressedGamePackets packets = null;
         var consumedItems = new List<(Item, int)>();
