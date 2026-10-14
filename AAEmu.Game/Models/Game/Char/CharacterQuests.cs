@@ -389,6 +389,9 @@ public class CharacterQuests(Character owner)
             if (!forcibly)
             {
                 NotifyStartRequirementFailed(questId, requirement, answerClient);
+                if (answerClient && FactionExileManager.IsLimitedExileQuest(template) &&
+                    FactionExileManager.Instance.ExileQuestBlock(Owner) is { } exileBlock)
+                    Owner.SendMessage(exileBlock);
                 return false;
             }
         }
@@ -793,6 +796,7 @@ public class CharacterQuests(Character owner)
             // Saga groups advance from the same completion edge; the state counts from these bits,
             // so a repeated Set(true) cannot double-count.
             Owner.SagaProgress?.OnQuestCompleted(questId);
+            FactionPowerManager.Instance.AddQuest(Owner, questId);
             Owner.Events?.OnQuestComplete(Owner, new OnQuestCompleteArgs
             {
                 QuestId = questId
