@@ -911,16 +911,14 @@ public sealed class Mate : Unit
     {
         base.OnZoneChange(lastZoneKey, newZoneKey); // Unit
 
-        if (Passengers.Count <= 0)
-        {
-            return;
-        }
+        // Unlike a world-owned Slave, a Mate was only announced when summoned or mounted. Move
+        // its zone-host mirror whenever its Transform zone changes, before handing its rider over.
+        if (lastZoneKey != newZoneKey)
+            MateManager.AnnounceMateToZone(this);
 
-        foreach (var (_, passengerInfo) in Passengers)
-        {
-            var passenger = WorldManager.Instance.GetCharacterByObjId(passengerInfo._objId);
-            passenger?.OnZoneChange(lastZoneKey, newZoneKey);
-        }
+        // Riders are transform children. WorldManager recursively refreshes their region and zone
+        // after this mount moves, which invokes each rider's own OnZoneChange. Forwarding the event
+        // here as well caused the rider to be handed off and attached twice at a zone seam.
     }
 
     public override Character GetOwnerCharacter()

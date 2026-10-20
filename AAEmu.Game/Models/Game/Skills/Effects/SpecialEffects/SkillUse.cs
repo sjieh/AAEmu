@@ -1,5 +1,6 @@
 ﻿using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Models.Game.Char;
+using AAEmu.Game.Models.Game.Music;
 using AAEmu.Game.Models.Game.Units;
 using AAEmu.Game.Models.Tasks.Skills;
 
@@ -38,7 +39,10 @@ public class SkillUse : SpecialEffectAction
         //target = ((Unit)caster).CurrentTarget;
         var useSkill = new Skill(SkillManager.Instance.GetSkillTemplate((uint)skillId));
         targetObj = new SkillCastUnitTarget(target?.ObjId ?? 0);
-        caster.Buffs.TriggerRemoveOn(Buffs.BuffRemoveOn.UseSkill);//Not sure if it belongs here.
+        // The periodic Songcraft helper is maintenance work, not a player skill use that should
+        // consume the performance buff it is keeping alive.
+        if (!SongcraftPerformanceManager.IsPerformanceMaintenanceTick(skillId, skill))
+            caster.Buffs.TriggerRemoveOn(Buffs.BuffRemoveOn.UseSkill);
         TaskManager.Instance.Schedule(new UseSkillTask(useSkill, caster, casterObj, target, targetObj, skillObject), TimeSpan.FromMilliseconds(delay));
         //useSkill.ApplyEffects(caster, casterObj, target, targetObj, skillObject);
     }

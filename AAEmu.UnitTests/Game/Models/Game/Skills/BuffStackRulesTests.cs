@@ -236,10 +236,11 @@ public class BuffStackRulesTests
     public async Task WireStack_ReportsTheFamilyTotalForTheOneInstanceRules()
     {
         // Refresh and ChargeRefresh live as one instance per family, so the family total is the count the
-        // icon carries — sail trim at sixty stacks among them.
+        // icon carries — sail trim at sixty stacks among them. Extend retains the count on the individual
+        // instance, so other casters' extended applications are not folded into this icon.
         await Assert.That(BuffStackRules.WireStack(BuffStackRule.Refresh, 1, 60)).IsEqualTo(60u);
         await Assert.That(BuffStackRules.WireStack(BuffStackRule.ChargeRefresh, 1, 3)).IsEqualTo(3u);
-        await Assert.That(BuffStackRules.WireStack(BuffStackRule.Extend, 1, 4)).IsEqualTo(4u);
+        await Assert.That(BuffStackRules.WireStack(BuffStackRule.Extend, 1, 4)).IsEqualTo(1u);
     }
 
     [Test]

@@ -35,6 +35,8 @@ public sealed class ZoneHostSupervisor : IDisposable
     private readonly Action<string> _ensureDirectory;
     private readonly ConcurrentDictionary<uint, TrackedHost> _hosts = new();
     private readonly ConcurrentDictionary<int, byte> _portsInUse = new();
+    private readonly object _lifecycleSync = new();
+    private int _startsInProgress;
     private readonly object _warmLock = new();
     private readonly Dictionary<string, List<WarmSlot>> _warmByTemplate =
         new(StringComparer.OrdinalIgnoreCase);
@@ -44,6 +46,7 @@ public sealed class ZoneHostSupervisor : IDisposable
     private Action<WorldInstance> _disposeWarmWorld;
     private Action<WorldInstance> _onWarmHostReady;
     private Timer _idleCullTimer;
+    private bool _disposed;
 
     public ZoneHostSupervisor(
         ZoneHostConfig config,
@@ -234,15 +237,28 @@ public sealed class ZoneHostSupervisor : IDisposable
             return false;
         }
 
-        if (!_hosts.TryAdd(world.Id, new TrackedHost(null, 0)))
+        lock (_lifecycleSync)
         {
-            Logger.Warn("ZoneHost already tracked for world {0}", world.Id);
-            return true;
+            if (_disposed)
+                return false;
+
+            if (!_hosts.TryAdd(world.Id, new TrackedHost(null, 0)))
+            {
+                Logger.Warn("ZoneHost already tracked for world {0}", world.Id);
+                return true;
+            }
+
+            // Dispose waits for launches already in flight so it cannot exit after sweeping
+            // the placeholder but before the detached child has been created and rejected.
+            _startsInProgress++;
         }
 
+        var svPort = 0;
+        var processId = 0;
+        IZoneHostProcess process = null;
         try
         {
-            var svPort = AllocatePort();
+            svPort = AllocatePort();
             var logRoot = string.IsNullOrWhiteSpace(_config.RuntimeLogRoot)
                 ? Path.Combine(Path.GetTempPath(), "AAEmuZoneHost")
                 : _config.RuntimeLogRoot;
@@ -250,27 +266,61 @@ public sealed class ZoneHostSupervisor : IDisposable
             _ensureDirectory(logDirectory);
             var logName = $"ArcheAge-{Sanitize(zoneName)}-{world.Id}-{DateTime.Now:yyyyMMdd-HHmmss}.log";
             var spec = ZoneHostCommandLine.Build(_config, zoneName, world.Id, svPort, logDirectory, logName);
-            var process = _factory.Start(spec);
+            process = _factory.Start(spec);
+            processId = process.Id;
             if (process.WaitForExit(300))
             {
+                process.KillTree(); // Also releases the Process wrapper for an early exit.
+                process = null;
                 throw new InvalidOperationException(
                     $"AAEmu.ZoneHost exited immediately for world {world.Id} ({zoneName}). See {logDirectory}");
             }
 
-            _hosts[world.Id] = new TrackedHost(process, svPort);
-            Logger.Info(
-                "ZoneHost started world={0} zone={1} instanceId={2} svPort={3} pid={4}",
-                world.Id, zoneName, world.Id, svPort, process.Id);
-            return true;
+            lock (_lifecycleSync)
+            {
+                // Dispose may have removed the placeholder while the child was starting. In that
+                // case, do not publish a new host after shutdown has already swept tracked hosts.
+                if (_disposed || !_hosts.ContainsKey(world.Id))
+                {
+                    _hosts.TryRemove(world.Id, out _);
+                    _portsInUse.TryRemove(svPort, out _);
+                    process.KillTree();
+                    process = null;
+                    return false;
+                }
+
+                _hosts[world.Id] = new TrackedHost(process, svPort);
+                process = null; // Ownership transferred to the supervisor's tracked-host table.
+            }
         }
         catch (Exception ex)
         {
-            _hosts.TryRemove(world.Id, out var failed);
-            if (failed != null && failed.SvPort != 0)
-                _portsInUse.TryRemove(failed.SvPort, out _);
+            try { process?.KillTree(); }
+            catch (Exception stopException)
+            {
+                Logger.Warn(stopException, "ZoneHost cleanup after start failure failed for world {0}", world.Id);
+            }
+
+            lock (_lifecycleSync)
+                _hosts.TryRemove(world.Id, out _);
+            if (svPort != 0)
+                _portsInUse.TryRemove(svPort, out _);
             Logger.Error(ex, "ZoneHost start failed for world {0} ({1})", world.Id, zoneName);
             return false;
         }
+        finally
+        {
+            lock (_lifecycleSync)
+            {
+                _startsInProgress--;
+                Monitor.PulseAll(_lifecycleSync);
+            }
+        }
+
+        Logger.Info(
+            "ZoneHost started world={0} zone={1} instanceId={2} svPort={3} pid={4}",
+            world.Id, zoneName, world.Id, svPort, processId);
+        return true;
     }
 
     /// <summary>
@@ -308,8 +358,30 @@ public sealed class ZoneHostSupervisor : IDisposable
 
     public void Dispose()
     {
-        _idleCullTimer?.Dispose();
+        lock (_lifecycleSync)
+        {
+            if (_disposed)
+                return;
+            _disposed = true;
+
+            while (_startsInProgress > 0)
+                Monitor.Wait(_lifecycleSync);
+        }
+
+        var idleCullTimer = _idleCullTimer;
         _idleCullTimer = null;
+        if (idleCullTimer != null)
+        {
+            // Do not return while a cull callback is in the middle of stopping a detached host.
+            using var callbacksDrained = new ManualResetEvent(false);
+            idleCullTimer.Dispose(callbacksDrained);
+            callbacksDrained.WaitOne();
+        }
+
+        // ZoneHost uses DETACHED_PROCESS, so it survives the World process unless the
+        // supervisor explicitly terminates every process it owns during shutdown.
+        foreach (var worldId in _hosts.Keys.ToArray())
+            StopInternal(worldId, refillWarm: false, disposeWorld: true);
     }
 
     private bool TrySpawnWarmSlot(string templateName)
@@ -331,10 +403,28 @@ public sealed class ZoneHostSupervisor : IDisposable
             }
 
             var slot = new WarmSlot(world, templateName, DateTime.UtcNow);
-            lock (_warmLock)
+            var registered = false;
+            lock (_lifecycleSync)
             {
-                GetSlots(templateName).Add(slot);
-                _warmByInstanceId[world.Id] = slot;
+                if (!_disposed)
+                {
+                    lock (_warmLock)
+                    {
+                        GetSlots(templateName).Add(slot);
+                        _warmByInstanceId[world.Id] = slot;
+                        registered = true;
+                    }
+                }
+            }
+
+            if (!registered)
+            {
+                // Shutdown won the race after the process started but before its warm slot was
+                // published. Remove the host and release the world instance explicitly.
+                StopInternal(world.Id, refillWarm: false, disposeWorld: false);
+                try { _disposeWarmWorld?.Invoke(world); }
+                catch (Exception ex) { Logger.Warn(ex, "Warm world dispose failed for {0}", world.Id); }
+                return false;
             }
 
             Logger.Info("Warm ZoneHost idle ready template={0} world={1}", templateName, world.Id);
@@ -374,7 +464,12 @@ public sealed class ZoneHostSupervisor : IDisposable
             }
         }
 
-        if (!_hosts.TryRemove(worldId, out var tracked))
+        TrackedHost tracked;
+        bool hadTrackedHost;
+        lock (_lifecycleSync)
+            hadTrackedHost = _hosts.TryRemove(worldId, out tracked);
+
+        if (!hadTrackedHost)
         {
             if (worldToDispose != null)
             {
@@ -388,7 +483,8 @@ public sealed class ZoneHostSupervisor : IDisposable
 
         try
         {
-            if (tracked.Process is { HasExited: false })
+            // KillTree checks HasExited itself and always disposes the Process wrapper.
+            if (tracked.Process != null)
                 tracked.Process.KillTree();
         }
         catch (Exception ex)
@@ -549,7 +645,12 @@ public sealed class ZoneHostSupervisor : IDisposable
             try
             {
                 if (!process.HasExited)
+                {
                     process.Kill(entireProcessTree: true);
+                    // Kill is asynchronous. Wait for the root process to exit before World
+                    // itself shuts down, so detached ZoneHost children are not left behind.
+                    process.WaitForExit(5000);
+                }
             }
             finally
             {

@@ -60,6 +60,9 @@ public class SkillController
             case SkillControllerKind.Dash:
                 Logger.Trace($"SkillController: create DashSkillController");
                 return new DashSkillController(template, owner, target) { State = SCState.Created };
+            case SkillControllerKind.Rotate when RotateSkillController.Supports(template):
+                Logger.Trace("SkillController: create RotateSkillController for 180-degree turn");
+                return new RotateSkillController(template, owner, target) { State = SCState.Created };
             default:
                 // The remaining kinds are named but have no controller on this server: rope is handled
                 // outside the controller system by ShipHarpoonRopeController (kind 5) and rope_ready (9) is

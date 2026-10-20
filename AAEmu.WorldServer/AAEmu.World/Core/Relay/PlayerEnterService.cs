@@ -72,8 +72,26 @@ public class PlayerEnterService
         var character = FindActiveCharacter(bcId);
         var newInstanceId = ResolveInstanceId(character, bcId);
 
-        // Old host is whoever currently tracks this unit — not the destination instance id
-        // (enter-dungeon already set ParentWorld to the copy).
+        var newZone = ForZoneInstance(newZoneId, newInstanceId) ?? ForZoneId(newZoneId);
+        if (newZone == null)
+        {
+            Logger.Warn(
+                "Zone handoff refused before source removal: no ZoneLoaded for newZoneId={0} instanceId={1} bcId={2} oldZoneId={3}",
+                newZoneId, newInstanceId, bcId, oldZoneId);
+            return false;
+        }
+
+        if (unitStateBody == null || unitStateBody.Length == 0)
+        {
+            Logger.Warn(
+                "Zone handoff refused before source removal: empty WZUnitState body bcId={0} oldZoneId={1} newZoneId={2}",
+                bcId, oldZoneId, newZoneId);
+            return false;
+        }
+
+        // Validate the destination and body before removing the current copy. The old host is whoever
+        // currently tracks this unit — not the destination instance id (enter-dungeon already set
+        // ParentWorld to the copy).
         var oldZone = FindZoneTrackingUnit(bcId) ?? ForZoneId(oldZoneId);
         if (oldZone != null)
         {
@@ -86,21 +104,6 @@ public class PlayerEnterService
         else if (oldZoneId != 0)
         {
             Logger.Warn("Zone handoff: no old zone connection zoneId={0} bcId={1}", oldZoneId, bcId);
-        }
-
-        var newZone = ForZoneInstance(newZoneId, newInstanceId) ?? ForZoneId(newZoneId);
-        if (newZone == null)
-        {
-            Logger.Warn(
-                "Zone handoff refused: no ZoneLoaded for newZoneId={0} instanceId={1} bcId={2}",
-                newZoneId, newInstanceId, bcId);
-            return false;
-        }
-
-        if (unitStateBody == null || unitStateBody.Length == 0)
-        {
-            Logger.Warn("Zone handoff refused: empty WZUnitState body bcId={0}", bcId);
-            return false;
         }
 
         ReplaceZoneUnit(newZone, bcId, unitStateBody, "handoff");

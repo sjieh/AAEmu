@@ -141,7 +141,7 @@ public static class WorldIntegration
     /// The ObjId is needed even though the body already carries it: creating a unit in a zone has to
     /// drop any per-zone bookkeeping left behind by a previous holder of that recycled id.
     /// </remarks>
-    public static Action<uint, uint, byte[]> RelayUnitStateToZone { get; set; }
+    public static Func<uint, uint, byte[], bool> RelayUnitStateToZone { get; set; }
 
     /// <summary>
     /// Replaces the set of npc_spawners ids the game keeps shut (exile brokers of closed routes): World stops

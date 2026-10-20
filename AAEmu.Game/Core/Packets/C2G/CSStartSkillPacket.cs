@@ -87,6 +87,12 @@ public class CSStartSkillPacket() : GamePacket(CSOffsets.CSStartSkillPacket, 1)
             // echoes type 7, which the client cannot parse (sc error on SkillStarted).
             skillObject = HousingRebuildSkillCast.ForSkillStarted(stream.ReadUInt32());
         }
+        else if (DwarfTransformationLearnRules.IsLearnRequest(skillId, flag))
+        {
+            // The Dwarf Learn Transformation UI sends flag 19 without a payload. Keep it as an
+            // internal cast marker and serialize the normal None skill-object value back to the client.
+            skillObject = new SkillObjectDwarfTransformationLearn();
+        }
         else if (SkillObject.IsKnownType(flagType))
         {
             skillObject = SkillObject.GetByType((SkillObjectType)flagType);
@@ -170,6 +176,39 @@ public class CSStartSkillPacket() : GamePacket(CSOffsets.CSStartSkillPacket, 1)
 
         var activeCharacter = Connection.ActiveChar;
         activeCharacter.LastPacketActivityTime = DateTime.UtcNow;
+
+        if (DwarfTransformationLearnRules.IsLearnCast(skillId, skillObject))
+        {
+            if (activeCharacter.Skills.HasSkill(DwarfTransformationLearnRules.SummonJuggernautSkillId))
+            {
+                Logger.Info("Dwarf Learn Transformation ignored for {0}: skill {1} is already learned",
+                    activeCharacter.Name, DwarfTransformationLearnRules.SummonJuggernautSkillId);
+                return;
+            }
+
+            if (!activeCharacter.Skills.CanLearnSkillWithoutLearnItemCost(
+                    DwarfTransformationLearnRules.SummonJuggernautSkillId))
+            {
+                Logger.Warn("Dwarf Learn Transformation rejected: character {0} cannot learn skill {1}",
+                    activeCharacter.Name, DwarfTransformationLearnRules.SummonJuggernautSkillId);
+                return;
+            }
+        }
+
+        // Backdraft's damage area is a directional sphere-cone. Keep the next investigation grounded
+        // in the exact direction the client sent and the facing the server will use for that cone;
+        // this packet field is otherwise intentionally ignored by the current cast path.
+        if (skillId == 44200)
+        {
+            var backdraftTemplate = SkillManager.Instance.GetSkillTemplate(skillId);
+            var serverYawDegrees = activeCharacter.Transform?.World?.Rotation.Z * (180d / Math.PI) ?? 0d;
+            Logger.Info(
+                "Backdraft direction diagnostic: inputDirection=0x{0:X2} (signed={1}), useInputDirection={2}, serverYaw={3:F1}°",
+                inputDirection,
+                unchecked((sbyte)inputDirection),
+                backdraftTemplate?.UseInputDirection ?? false,
+                serverYawDegrees);
+        }
 
         // Heir successors are not ordinary learned skills. Gate them before the Zone-authority/local
         // split so neither path nor the generic valid-template fallback can cast an unselected variant.

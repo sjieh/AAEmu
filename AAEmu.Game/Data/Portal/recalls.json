@@ -71,6 +71,21 @@
     },
     //----------------- NUIA continent ----------------------
     //
+    // AUBRE CRADLE
+    {
+        // SubZone 1168 is reported by the client in zone 150. The compact database
+        // has no position for this subzone, so this return point uses a position
+        // observed in Server.log and can be refined if a better landmark is found.
+        "Id": 1210,
+        "Name": "Giant's Canyon",
+        "X": 6881.3,
+        "Y": 12172.6,
+        "Z": 640.6,
+        "ZoneId": 150,
+        "ZRot": 0.0,
+        "SubZoneId": 1168,
+        "Owner": 0
+    },
     // GWEONID
     {
         "Id": 1, // 15 (101,103,104) 1
@@ -406,7 +421,7 @@
         "Owner": 0
     },
     {
-        "Id": 21, // Ajout / ADD 
+        "Id": 13, // return_points 13: BirchVillage
         "Name": "Birchkeep",
         "X": 9701,
         "Y": 12753,
@@ -442,7 +457,7 @@
         "Owner": 0
     },
     {
-        "Id": 13, // 13 6 (всего три точки в Marianople)
+        "Id": 11, // return_points 11: mari_southinn
         "Name": "Marianople's Inn",
         "X": 11080.5,
         "Y": 11873,
@@ -1427,5 +1442,824 @@
         "ZRot": 0.0,
         "SubZoneId": 1110,
         "Owner": 0
+    },
+    //----------------- Additional mapped world return points -----------------
+    // return_points 246 (Gwe_start_G); subzone 1,
+    {
+      "Id": 246,
+      "Name": "Gwe Start G",
+      "X": 10390.74,
+      "Y": 15980.98,
+      "Z": 367.202,
+      "ZoneId": 129,
+      "ZRot": 0.0,
+      "SubZoneId": 1,
+      "Owner": 0
+    },
+    // return_points 767 (potal_boru); subzone 458,
+    {
+      "Id": 767,
+      "Name": "Potal Boru",
+      "X": 21185.39,
+      "Y": 12649.34,
+      "Z": 194.725,
+      "ZoneId": 139,
+      "ZRot": -2.49582,
+      "SubZoneId": 458,
+      "Owner": 0
+    },
+    // return_points 874 (tr_w_solzreed); subzone 341,
+    {
+      "Id": 874,
+      "Name": "W Solzreed",
+      "X": 14247.22,
+      "Y": 13970.228,
+      "Z": 104.232,
+      "ZoneId": 142,
+      "ZRot": 1.48353,
+      "SubZoneId": 341,
+      "Owner": 0
+    },
+    // return_points 876 (tr_w_two_crowns); subzone 113,
+    {
+      "Id": 876,
+      "Name": "W Two Crowns",
+      "X": 13106.99,
+      "Y": 10543.11,
+      "Z": 118.864,
+      "ZoneId": 149,
+      "ZRot": -2.61799,
+      "SubZoneId": 113,
+      "Owner": 0
+    },
+    // return_points 799 (rp_irontown); subzone 1164,
+    {
+      "Id": 799,
+      "Name": "Iron Town",
+      "X": 7565.05,
+      "Y": 12569.34,
+      "Z": 686.671,
+      "ZoneId": 150,
+      "ZRot": 0.15708,
+      "SubZoneId": 1164,
+      "Owner": 0
+    },
+    // return_points 157 (ice_cap_vil); subzone 720,
+    {
+      "Id": 157,
+      "Name": "Ice Cap Village",
+      "X": 6237.52,
+      "Y": 13081.87,
+      "Z": 1135.59,
+      "ZoneId": 154,
+      "ZRot": -1.29154,
+      "SubZoneId": 720,
+      "Owner": 0
+    },
+    // return_points 810 (rp_wilderness_work); subzone 1176,
+    {
+      "Id": 810,
+      "Name": "Wilderness Work",
+      "X": 19258.845,
+      "Y": 6652.15,
+      "Z": 273.508,
+      "ZoneId": 157,
+      "ZRot": 2.35619,
+      "SubZoneId": 1176,
+      "Owner": 0
+    },
+    // return_points 808 (rp_wilderness_ruin); subzone 1177,
+    {
+      "Id": 808,
+      "Name": "Wilderness Ruin",
+      "X": 19473.58,
+      "Y": 5969.27,
+      "Z": 185.211,
+      "ZoneId": 157,
+      "ZRot": -1.32645,
+      "SubZoneId": 1177,
+      "Owner": 0
+    },
+    // return_points 712 (gahee_two_1); subzone 1002,
+    {
+      "Id": 712,
+      "Name": "Gahee Two 1",
+      "X": 13172.347,
+      "Y": 10124.274,
+      "Z": 105.668,
+      "ZoneId": 186,
+      "ZRot": 0.0,
+      "SubZoneId": 1002,
+      "Owner": 0
+    },
+    // return_points 789 (rp_wilderness_flower); subzone 1180,
+    {
+      "Id": 789,
+      "Name": "Wilderness Flower",
+      "X": 20426.726,
+      "Y": 6203.13,
+      "Z": 230.514,
+      "ZoneId": 190,
+      "ZRot": 2.16421,
+      "SubZoneId": 1180,
+      "Owner": 0
+    },
+    // return_points 812 (rp_wilderness_government); subzone 1181,
+    {
+      "Id": 812,
+      "Name": "Wilderness Government",
+      "X": 21125.12,
+      "Y": 5939.78,
+      "Z": 246.377,
+      "ZoneId": 190,
+      "ZRot": -1.51844,
+      "SubZoneId": 1181,
+      "Owner": 0
+    },
+    // return_points 23 (ice_glass_vill); subzone 1194,
+    {
+      "Id": 23,
+      "Name": "Iceglass Village",
+      "X": 6534.742,
+      "Y": 13407.17,
+      "Z": 968.86,
+      "ZoneId": 193,
+      "ZRot": 0.139626,
+      "SubZoneId": 1194,
+      "Owner": 0
+    },
+    // return_points 21 (shooting_star_vil); subzone 1200,
+    {
+      "Id": 21,
+      "Name": "Shooting Star Village",
+      "X": 7351.98,
+      "Y": 13786.48,
+      "Z": 1173.78,
+      "ZoneId": 193,
+      "ZRot": 0.0,
+      "SubZoneId": 1200,
+      "Owner": 0
+    },
+    // return_points 875 (tr_w_cross_plains); subzone 182,
+    {
+      "Id": 875,
+      "Name": "W Cross Plains",
+      "X": 15473.04,
+      "Y": 11411.44,
+      "Z": 108.996,
+      "ZoneId": 257,
+      "ZRot": -1.48353,
+      "SubZoneId": 182,
+      "Owner": 0
+    },
+    // return_points 807 (rp_hanuimaru_2); subzone 1206,
+    {
+      "Id": 807,
+      "Name": "Hanuimaru 2",
+      "X": 5992.81,
+      "Y": 8697.88,
+      "Z": 408.343,
+      "ZoneId": 269,
+      "ZRot": 0.0,
+      "SubZoneId": 1206,
+      "Owner": 0
+    },
+    // return_points 836 (e_lokaloka_mountains_2); subzone 1210,
+    {
+      "Id": 836,
+      "Name": "E Lokaloka Mountains 2",
+      "X": 27305.39,
+      "Y": 11228.66,
+      "Z": 868.533,
+      "ZoneId": 270,
+      "ZRot": 0.0,
+      "SubZoneId": 1210,
+      "Owner": 0
+    },
+    // return_points 841 (resident_townhall); subzone 930,
+    {
+      "Id": 841,
+      "Name": "Resident Townhall",
+      "X": 29841.89,
+      "Y": 8856.983,
+      "Z": 479.228,
+      "ZoneId": 272,
+      "ZRot": 1.62316,
+      "SubZoneId": 930,
+      "Owner": 0
+    },
+    // return_points 1066 (o_land_of_sunlights_camp_1); subzone 1345,
+    {
+      "Id": 1066,
+      "Name": "Land Of Sunlights Camp 1",
+      "X": 21824.22,
+      "Y": 26866.84,
+      "Z": 136.84,
+      "ZoneId": 275,
+      "ZRot": 0.0,
+      "SubZoneId": 1345,
+      "Owner": 0
+    },
+    // return_points 158 (nacha_gate); subzone 1075,
+    {
+      "Id": 158,
+      "Name": "Nacha Gate",
+      "X": 23026.95,
+      "Y": 25851.68,
+      "Z": 137.565,
+      "ZoneId": 276,
+      "ZRot": 0.0,
+      "SubZoneId": 1075,
+      "Owner": 0
+    },
+    // return_points 1069 (o_abyss_gate_camp_2); subzone 1346,
+    {
+      "Id": 1069,
+      "Name": "Abyss Gate Camp 2",
+      "X": 23372.38,
+      "Y": 24915.34,
+      "Z": 145.073,
+      "ZoneId": 276,
+      "ZRot": 0.0,
+      "SubZoneId": 1346,
+      "Owner": 0
+    },
+    // return_points 713 (gahee_pirate_1); subzone 869,
+    {
+      "Id": 713,
+      "Name": "Gahee Pirate 1",
+      "X": 15208.82,
+      "Y": 22763.68,
+      "Z": 115.667,
+      "ZoneId": 284,
+      "ZRot": 0.0,
+      "SubZoneId": 869,
+      "Owner": 0
+    },
+    // return_points 816 (rp_wilderness_city); subzone 1187,
+    {
+      "Id": 816,
+      "Name": "Wilderness City",
+      "X": 21991.717,
+      "Y": 5634.41,
+      "Z": 122.611,
+      "ZoneId": 286,
+      "ZRot": -1.51844,
+      "SubZoneId": 1187,
+      "Owner": 0
+    },
+    // return_points 818 (rp_wilderness_animal_farm); subzone 1184,
+    {
+      "Id": 818,
+      "Name": "Wilderness Animal Farm",
+      "X": 22776.42,
+      "Y": 6217.81,
+      "Z": 173.508,
+      "ZoneId": 287,
+      "ZRot": 2.02458,
+      "SubZoneId": 1184,
+      "Owner": 0
+    },
+    // return_points 737 (ss_gotohousing_east); subzone 1111,
+    {
+      "Id": 737,
+      "Name": "Ss Gotohousing East",
+      "X": 19977.65,
+      "Y": 27386.48,
+      "Z": 158.38,
+      "ZoneId": 301,
+      "ZRot": 0.0,
+      "SubZoneId": 1111,
+      "Owner": 0
+    },
+    // return_points 1073 (o_whale_song_bay_03); subzone 1223,
+    {
+      "Id": 1073,
+      "Name": "Whale Song Bay 03",
+      "X": 16504.78,
+      "Y": 27899.76,
+      "Z": 100.935,
+      "ZoneId": 310,
+      "ZRot": 1.13446,
+      "SubZoneId": 1223,
+      "Owner": 0
+    },
+    // return_points 873 (whale_song_god_of_shield); subzone 1224,
+    {
+      "Id": 873,
+      "Name": "Whale Song God Of Shield",
+      "X": 16897.09,
+      "Y": 27901.87,
+      "Z": 117.16,
+      "ZoneId": 310,
+      "ZRot": -1.78024,
+      "SubZoneId": 1224,
+      "Owner": 0
+    },
+    // return_points 798 (rp_machinefactory); subzone 1171,
+    {
+      "Id": 798,
+      "Name": "Machine Factory",
+      "X": 8043.43,
+      "Y": 13531.04,
+      "Z": 821.7,
+      "ZoneId": 328,
+      "ZRot": 0.767945,
+      "SubZoneId": 1171,
+      "Owner": 0
+    },
+    // return_points 806 (rp_hanuimaru_1); subzone 1207,
+    {
+      "Id": 806,
+      "Name": "Hanuimaru 1",
+      "X": 6290.48,
+      "Y": 9465.58,
+      "Z": 457.521,
+      "ZoneId": 334,
+      "ZRot": 0.0,
+      "SubZoneId": 1207,
+      "Owner": 0
+    },
+    // return_points 882 (rp_o_candlestick_of_sea_b); subzone 1230,
+    {
+      "Id": 882,
+      "Name": "O Candlestick Of Sea B",
+      "X": 13806.24,
+      "Y": 26569.54,
+      "Z": 182.904,
+      "ZoneId": 344,
+      "ZRot": 2.35619,
+      "SubZoneId": 1230,
+      "Owner": 0
+    },
+    // return_points 881 (rp_o_candlestick_of_sea_a); subzone 1231,
+    {
+      "Id": 881,
+      "Name": "O Candlestick Of Sea A",
+      "X": 14700.86,
+      "Y": 26805.54,
+      "Z": 164.298,
+      "ZoneId": 344,
+      "ZRot": 1.5708,
+      "SubZoneId": 1231,
+      "Owner": 0
+    },
+    // return_points 884 (rp_o_candlestick_of_sea_d); subzone 1232,
+    {
+      "Id": 884,
+      "Name": "O Candlestick Of Sea D",
+      "X": 14474.75,
+      "Y": 26987.89,
+      "Z": 177.94,
+      "ZoneId": 344,
+      "ZRot": -0.959931,
+      "SubZoneId": 1232,
+      "Owner": 0
+    },
+    // return_points 883 (rp_o_candlestick_of_sea_c); subzone 1233,
+    {
+      "Id": 883,
+      "Name": "O Candlestick Of Sea C",
+      "X": 14625.12,
+      "Y": 26237.12,
+      "Z": 163.427,
+      "ZoneId": 344,
+      "ZRot": -1.13446,
+      "SubZoneId": 1233,
+      "Owner": 0
+    },
+    // return_points 863 (rp_o_candlestick_of_sea_1); subzone 1235,
+    {
+      "Id": 863,
+      "Name": "O Candlestick Of Sea 1",
+      "X": 14435.17,
+      "Y": 26693.98,
+      "Z": 133.365,
+      "ZoneId": 344,
+      "ZRot": 2.79253,
+      "SubZoneId": 1235,
+      "Owner": 0
+    },
+    // return_points 935 (rp_hirama_campsite); subzone 1249,
+    {
+      "Id": 935,
+      "Name": "Hirama Campsite",
+      "X": 19484.66,
+      "Y": 31175.25,
+      "Z": 497.815,
+      "ZoneId": 350,
+      "ZRot": 2.9147,
+      "SubZoneId": 1249,
+      "Owner": 0
+    },
+    // return_points 1011 (navel_of_the_world); subzone 1250,
+    {
+      "Id": 1011,
+      "Name": "Navel Of The World",
+      "X": 20572.15,
+      "Y": 31833.0,
+      "Z": 603.577,
+      "ZoneId": 354,
+      "ZRot": -0.034907,
+      "SubZoneId": 1250,
+      "Owner": 0
+    },
+    // return_points 979 (hirama_east_warrior_hall); subzone 1273,
+    {
+      "Id": 979,
+      "Name": "Hirama East Warrior Hall",
+      "X": 21040.39,
+      "Y": 31022.27,
+      "Z": 876.167,
+      "ZoneId": 354,
+      "ZRot": -1.93732,
+      "SubZoneId": 1273,
+      "Owner": 0
+    },
+    // return_points 980 (hirama_east_waterfall_camp); subzone 1284,
+    {
+      "Id": 980,
+      "Name": "Hirama East Waterfall Camp",
+      "X": 21075.0,
+      "Y": 30460.87,
+      "Z": 787.148,
+      "ZoneId": 354,
+      "ZRot": 1.8675,
+      "SubZoneId": 1284,
+      "Owner": 0
+    },
+    // return_points 981 (hirama_east_forest_camp); subzone 1285,
+    {
+      "Id": 981,
+      "Name": "Hirama East Forest Camp",
+      "X": 21819.44,
+      "Y": 30965.82,
+      "Z": 745.19,
+      "ZoneId": 355,
+      "ZRot": 0.750492,
+      "SubZoneId": 1285,
+      "Owner": 0
+    },
+    // return_points 982 (hirama_east_meadow_camp); subzone 1286,
+    {
+      "Id": 982,
+      "Name": "Hirama East Meadow Camp",
+      "X": 21839.41,
+      "Y": 30095.53,
+      "Z": 590.031,
+      "ZoneId": 355,
+      "ZRot": -2.61799,
+      "SubZoneId": 1286,
+      "Owner": 0
+    },
+    // return_points 1047 (rp_land_of_magic); subzone 1337,
+    {
+      "Id": 1047,
+      "Name": "Land Of Magic",
+      "X": 17977.98,
+      "Y": 30584.37,
+      "Z": 191.809,
+      "ZoneId": 387,
+      "ZRot": -1.62316,
+      "SubZoneId": 1337,
+      "Owner": 0
+    },
+    // return_points 1107 (rp_ipna_monument); subzone 1349,
+    {
+      "Id": 1107,
+      "Name": "Ipna Monument",
+      "X": 15948.12,
+      "Y": 32230.43,
+      "Z": 185.095,
+      "ZoneId": 388,
+      "ZRot": 0.0,
+      "SubZoneId": 1349,
+      "Owner": 0
+    },
+    // return_points 1106 (rp_amor_base); subzone 1354,
+    {
+      "Id": 1106,
+      "Name": "Amor Base",
+      "X": 14707.27,
+      "Y": 29667.937,
+      "Z": 235.885,
+      "ZoneId": 391,
+      "ZRot": 0.0,
+      "SubZoneId": 1354,
+      "Owner": 0
+    },
+    // return_points 1114 (rp_ipnir_island); subzone 1355,
+    {
+      "Id": 1114,
+      "Name": "Ipnir Island",
+      "X": 14538.9,
+      "Y": 30507.66,
+      "Z": 658.114,
+      "ZoneId": 391,
+      "ZRot": 0.0,
+      "SubZoneId": 1355,
+      "Owner": 0
+    },
+    // return_points 1108 (rp_ipna_wing); subzone 1360,
+    {
+      "Id": 1108,
+      "Name": "Ipna Wing",
+      "X": 13418.2,
+      "Y": 31014.31,
+      "Z": 107.68,
+      "ZoneId": 391,
+      "ZRot": 0.0,
+      "SubZoneId": 1360,
+      "Owner": 0
+    },
+    // return_points 1173 (rp_base_camp); subzone 1372,
+    {
+      "Id": 1173,
+      "Name": "Base Camp",
+      "X": 23050.38,
+      "Y": 29201.16,
+      "Z": 366.763,
+      "ZoneId": 397,
+      "ZRot": 0.0,
+      "SubZoneId": 1372,
+      "Owner": 0
+    },
+    // return_points 1174 (rp_prairie's_eye); subzone 1375,
+    {
+      "Id": 1174,
+      "Name": "Prairie's Eye",
+      "X": 24520.59,
+      "Y": 29839.65,
+      "Z": 516.666,
+      "ZoneId": 401,
+      "ZRot": 0.0,
+      "SubZoneId": 1375,
+      "Owner": 0
+    },
+    //----------------- Name-matched subzones and resolved overlaps -----------------
+    // return_points 22 (andelph); subzone 1190
+    {
+      "Id": 22,
+      "Name": "Andelph",
+      "X": 6337.78,
+      "Y": 13757.59,
+      "Z": 1108.63,
+      "ZoneId": 192,
+      "ZRot": -3.08923,
+      "SubZoneId": 1190,
+      "Owner": 0
+    },
+    // return_points 116 (rnd); subzone 621
+    {
+      "Id": 116,
+      "Name": "Bashdi Camp Researcher",
+      "X": 16998.0,
+      "Y": 8478.0,
+      "Z": 170.0,
+      "ZoneId": 141,
+      "ZRot": -0.349066,
+      "SubZoneId": 621,
+      "Owner": 0
+    },
+    // return_points 117 (steamysauna); subzone 590
+    {
+      "Id": 117,
+      "Name": "Smoky Coast",
+      "X": 16953.73,
+      "Y": 7886.21,
+      "Z": 161.55,
+      "ZoneId": 141,
+      "ZRot": -1.74533,
+      "SubZoneId": 590,
+      "Owner": 0
+    },
+    // return_points 151 (sunrise_rocky); subzone 596
+    {
+      "Id": 151,
+      "Name": "Sunhalo Hill",
+      "X": 15762.28,
+      "Y": 7699.8,
+      "Z": 175.357,
+      "ZoneId": 141,
+      "ZRot": 0.0,
+      "SubZoneId": 596,
+      "Owner": 0
+    },
+    // return_points 205 (Forest_Returned_Camp); subzone 681
+    {
+      "Id": 205,
+      "Name": "Returned Camp",
+      "X": 24355.12,
+      "Y": 11413.03,
+      "Z": 422.061,
+      "ZoneId": 159,
+      "ZRot": -2.14675,
+      "SubZoneId": 681,
+      "Owner": 0
+    },
+    // return_points 211 (rain_fortune); subzone 197
+    {
+      "Id": 211,
+      "Name": "Hassan Camp",
+      "X": 19434.66,
+      "Y": 7522.47,
+      "Z": 196.126,
+      "ZoneId": 187,
+      "ZRot": 0.0,
+      "SubZoneId": 197,
+      "Owner": 0
+    },
+    // return_points 381 (loka_rt_solong); subzone 259
+    {
+      "Id": 381,
+      "Name": "Solongos Camp",
+      "X": 25948.21,
+      "Y": 8826.2,
+      "Z": 645.735,
+      "ZoneId": 138,
+      "ZRot": -2.47837,
+      "SubZoneId": 259,
+      "Owner": 0
+    },
+    // return_points 681 (dew_plains_altar); subzone 1127
+    {
+      "Id": 681,
+      "Name": "Red Dew Altar",
+      "X": 23412.666,
+      "Y": 27683.37,
+      "Z": 178.161,
+      "ZoneId": 307,
+      "ZRot": -0.401426,
+      "SubZoneId": 1127,
+      "Owner": 0
+    },
+    // return_points 696 (mirror_hunter); subzone 1132
+    {
+      "Id": 696,
+      "Name": "Hunter Lodge",
+      "X": 7455.96,
+      "Y": 19082.541,
+      "Z": 101.211,
+      "ZoneId": 266,
+      "ZRot": -2.58309,
+      "SubZoneId": 1132,
+      "Owner": 0
+    },
+    // return_points 835 (e_lokaloka_mountains_1); subzone 1209
+    {
+      "Id": 835,
+      "Name": "Cloudbridge Ridge",
+      "X": 28103.05,
+      "Y": 9922.39,
+      "Z": 865.968,
+      "ZoneId": 340,
+      "ZRot": -2.56563,
+      "SubZoneId": 1209,
+      "Owner": 0
+    },
+    // return_points 845 (rp_the_great_reeds); subzone 1211
+    {
+      "Id": 845,
+      "Name": "Great Reeds Shield Camp",
+      "X": 19613.67,
+      "Y": 28310.106,
+      "Z": 294.513,
+      "ZoneId": 288,
+      "ZRot": 3.14159,
+      "SubZoneId": 1211,
+      "Owner": 0
+    },
+    // return_points 855 (whale_song_w); subzone 1226
+    {
+      "Id": 855,
+      "Name": "Whale Song Bay Nuian Base",
+      "X": 16477.17,
+      "Y": 28466.61,
+      "Z": 141.375,
+      "ZoneId": 310,
+      "ZRot": -0.558505,
+      "SubZoneId": 1226,
+      "Owner": 0
+    },
+    // return_points 856 (whale_song_e); subzone 1227
+    {
+      "Id": 856,
+      "Name": "Whale Song Bay Haranyan Base",
+      "X": 17381.04,
+      "Y": 29292.45,
+      "Z": 178.432,
+      "ZoneId": 310,
+      "ZRot": 1.91986,
+      "SubZoneId": 1227,
+      "Owner": 0
+    },
+    // return_points 857 (whale_song_p); subzone 1228
+    {
+      "Id": 857,
+      "Name": "Whale Song Bay Pirate Base",
+      "X": 16471.61,
+      "Y": 29182.4,
+      "Z": 178.808,
+      "ZoneId": 310,
+      "ZRot": -0.314159,
+      "SubZoneId": 1228,
+      "Owner": 0
+    },
+    // return_points 878 (tr_e_singing_land); subzone 542
+    {
+      "Id": 878,
+      "Name": "Bipa Port Trading Post",
+      "X": 21067.509,
+      "Y": 10695.91,
+      "Z": 104.388,
+      "ZoneId": 160,
+      "ZRot": -0.436332,
+      "SubZoneId": 542,
+      "Owner": 0
+    },
+    // return_points 879 (tr_e_sunrise_peninsula); subzone 580
+    {
+      "Id": 879,
+      "Name": "Austera Harbor Trading Post",
+      "X": 16674.01,
+      "Y": 9062.795,
+      "Z": 104.25,
+      "ZoneId": 191,
+      "ZRot": 0.610865,
+      "SubZoneId": 580,
+      "Owner": 0
+    },
+    // return_points 934 (rp_raven_cave); subzone 1246
+    {
+      "Id": 934,
+      "Name": "Raven Cave",
+      "X": 18757.32,
+      "Y": 30187.07,
+      "Z": 368.624,
+      "ZoneId": 351,
+      "ZRot": 1.16937,
+      "SubZoneId": 1246,
+      "Owner": 0
+    },
+    // return_points 1074 (o_whale_song_bay_02); subzone 1221
+    {
+      "Id": 1074,
+      "Name": "Whale Song Bay Forward Base",
+      "X": 17278.71,
+      "Y": 28538.79,
+      "Z": 154.673,
+      "ZoneId": 310,
+      "ZRot": -1.5708,
+      "SubZoneId": 1221,
+      "Owner": 0
+    },
+    //----------------- Additional area-confirmed destinations -----------------
+    // return_points 152 (sunrise_ostera_outside); subzone 578
+    {
+      "Id": 152,
+      "Name": "Ostera Outskirts",
+      "X": 16864.0,
+      "Y": 8771.0,
+      "Z": 149.0,
+      "ZoneId": 191,
+      "ZRot": 0.0,
+      "SubZoneId": 578,
+      "Owner": 0
+    },
+    // return_points 711 (gahee_sunrise_1); subzone 578
+    {
+      "Id": 711,
+      "Name": "Ezna Lighthouse",
+      "X": 16694.75,
+      "Y": 9265.31,
+      "Z": 107.176,
+      "ZoneId": 191,
+      "ZRot": 0.523599,
+      "SubZoneId": 578,
+      "Owner": 0
+    },
+    // return_points 731 (ss_gotohousing); subzone 1111
+    {
+      "Id": 731,
+      "Name": "Shining Shore West Housing",
+      "X": 18848.27,
+      "Y": 27215.76,
+      "Z": 160.868,
+      "ZoneId": 282,
+      "ZRot": -1.76278,
+      "SubZoneId": 1111,
+      "Owner": 0
+    },
+    // return_points 877 (tr_e_ynystere); subzone 461
+    {
+      "Id": 877,
+      "Name": "Repose Cape Trading Post",
+      "X": 20531.71,
+      "Y": 13194.47,
+      "Z": 110.378,
+      "ZoneId": 139,
+      "ZRot": 0.0,
+      "SubZoneId": 461,
+      "Owner": 0
     }
 ]

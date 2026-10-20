@@ -698,6 +698,7 @@ public class CharacterManager(
             character.SetAction(slot, ActionSlotType.Spell, skill.Id);
             slot++;
         }
+        character.Skills.GrantDwarfRacialSkills(notify: false);
 
         character.Appellations = new CharacterAppellations(character);
         character.Quests = new CharacterQuests(character);

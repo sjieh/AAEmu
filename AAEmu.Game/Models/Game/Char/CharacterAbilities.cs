@@ -100,7 +100,7 @@ public class CharacterAbilities
         // SCSkillsReset(None) makes the client look up ability name 30 → "invalid ability".
         var isAdding = oldAbilityId is AbilityType.None or AbilityType.General;
 
-        // Client CanBuyAbilityChange() always shows formula 41 gold — charge before mutating.
+        // Learning a tree into an empty slot is free; formula 41 applies only when replacing a tree.
         if (Owner.Ability1 != oldAbilityId &&
             Owner.Ability2 != oldAbilityId &&
             Owner.Ability3 != oldAbilityId)
@@ -111,7 +111,7 @@ public class CharacterAbilities
             return;
         }
 
-        if (!BypassSwapChargeForTests && !AbilityChangeCosts.TryChargeSwapAbility(Owner))
+        if (!isAdding && !BypassSwapChargeForTests && !AbilityChangeCosts.TryChargeSwapAbility(Owner))
             return;
 
         // 0x147 reports every slot's before/after pair, so snapshot all three before mutating.

@@ -191,6 +191,23 @@ public class SkillManager(IAnimationManager animationManager, IPlotManager plotM
         return _startAbilitySkills.TryGetValue(ability, out var skills) ? skills : [];
     }
 
+    /// <summary>
+    /// Race skills marked auto_learn for the specified ability and character level, ordered by their
+    /// level gate. Used by the Dwarf Juggernaut progression, whose skills are learned from character
+    /// level rather than from spending points in the associated ability tree.
+    /// </summary>
+    public IReadOnlyList<SkillTemplate> GetAutoLearnRaceSkills(
+        int raceId, AbilityType ability, int characterLevel) =>
+        _skills.Values
+            .Where(skill =>
+                skill.CharRaceId == raceId &&
+                skill.AbilityId == ability &&
+                skill.AutoLearn &&
+                skill.AbilityLevel <= characterLevel)
+            .OrderBy(skill => skill.AbilityLevel)
+            .ThenBy(skill => skill.Id)
+            .ToList();
+
     public List<DefaultSkill> GetDefaultSkills()
     {
         return [.. _defaultSkills.Values];
@@ -468,6 +485,23 @@ public class SkillManager(IAnimationManager animationManager, IPlotManager plotM
     /// </summary>
     public IReadOnlyList<uint> GetAutoGrantablePassiveBuffIds(int characterLevel, ICollection<uint> learned) =>
         PassiveBuffLevelRules.AutoGranted(_passiveBuffs.Values, characterLevel, learned);
+
+    /// <summary>
+    /// Inactive passives belonging to an ability tree that have reached their character-level gate.
+    /// This supports racial form passives that are granted automatically rather than learned through
+    /// the ordinary skill-point path.
+    /// </summary>
+    public IReadOnlyList<PassiveBuffTemplate> GetLevelUnlockedPassiveBuffs(
+        AbilityType ability, int characterLevel) =>
+        _passiveBuffs.Values
+            .Where(passive =>
+                passive != null &&
+                !passive.Active &&
+                passive.AbilityId == ability &&
+                passive.Level <= characterLevel)
+            .OrderBy(passive => passive.Level)
+            .ThenBy(passive => passive.Id)
+            .ToList();
 
     // Get passives unlocked by reaching an ability-branch point threshold.
     public IReadOnlyList<uint> GetPointUnlockedPassiveBuffIds(

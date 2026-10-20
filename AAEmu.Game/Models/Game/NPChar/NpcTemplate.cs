@@ -14,6 +14,7 @@ public class NpcTemplate
     public NpcGradeType NpcGradeId { get; set; }
     public NpcKindType NpcKindId { get; set; }
     public byte Level { get; set; }
+    public byte HeirLevel { get; set; }
     public NpcTemplateType NpcTemplateId { get; set; }
     public uint ModelId { get; set; }
     public FactionsEnum FactionId { get; set; }

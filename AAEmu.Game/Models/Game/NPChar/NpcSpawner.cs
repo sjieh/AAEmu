@@ -6,6 +6,7 @@ using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Managers.UnitManagers;
 using AAEmu.Game.Core.Managers.World;
 using AAEmu.Game.GameData;
+using AAEmu.Game.Models;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.Items.Containers;
 using AAEmu.Game.Models.Game.Skills.Effects;
@@ -232,6 +233,28 @@ public class NpcSpawner : Spawner<Npc>
 
         var elapsedSeconds = (DateTime.UtcNow - _lastSpawnTime).TotalSeconds;
         return elapsedSeconds < Template.SpawnDelayMin;
+    }
+
+    /// <summary>
+    /// Applies the configured global rate to this spawner's sampled delay when a
+    /// respawn is scheduled. Keeping the configured delay on the spawner allows a
+    /// configuration reload to affect NPCs that die after the reload.
+    /// </summary>
+    private int GetScaledRespawnTime()
+    {
+        if (RespawnTime <= 0)
+            return RespawnTime;
+
+        var respawnRate = AppConfiguration.Instance.World.MobRespawnRate;
+        if (!double.IsFinite(respawnRate) || respawnRate <= 0)
+            respawnRate = 1.0;
+
+        if (respawnRate == 1.0)
+            return RespawnTime;
+
+        // A zero delay disables respawning; a scaled positive delay must stay
+        // positive because zero is the same sentinel in the spawn manager.
+        return Math.Max(1, (int)(RespawnTime / respawnRate));
     }
 
     /// <summary>
@@ -806,7 +829,7 @@ public class NpcSpawner : Spawner<Npc>
                     // Schedule a respawn and update _scheduledCount.
                     IncrementCount(true);
                     //Logger.Info($"Scheduled respawn for NPC {UnitId}:{SpawnerId}:{npc.ObjId} in {RespawnTime} seconds.");
-                    npc.Respawn = DateTime.UtcNow.AddSeconds(RespawnTime);
+                    npc.Respawn = DateTime.UtcNow.AddSeconds(GetScaledRespawnTime());
                     npc.ParentWorld.SpawnManager.AddRespawn(npc);
                 }
                 else
@@ -871,7 +894,7 @@ public class NpcSpawner : Spawner<Npc>
         // Schedules respawn if necessary
         if (RespawnTime > 0 && AreOtherNpcsInSpawnZone().Item2 < Template.MaxPopulation)
         {
-            npc.Respawn = DateTime.UtcNow.AddSeconds(RespawnTime);
+            npc.Respawn = DateTime.UtcNow.AddSeconds(GetScaledRespawnTime());
             npc.ParentWorld.SpawnManager.AddRespawn(npc);
             // Keep the _scheduledCount update logic unchanged, if an update is needed.
             var newScheduledCount = Interlocked.Increment(ref _scheduledCount);

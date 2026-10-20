@@ -115,6 +115,13 @@ public class WorldConfig
     public double GrowthRate { get; set; } = 1.0;
 
     /// <summary>
+    /// Multiplier for NPC respawn speed. A value above 1 shortens the spawn delay
+    /// (for example, 3 makes a delay take one third as long); a value below 1 lengthens it.
+    /// Values that are not finite or not positive are treated as 1.
+    /// </summary>
+    public double MobRespawnRate { get; set; } = 1.0;
+
+    /// <summary>
     /// Number of days 1 week worth of tax pays for, set this to 3640 would make 1 tax payment last for about 10 years.
     /// </summary>
     public uint DaysForTaxPayment { get; set; } = 7u;

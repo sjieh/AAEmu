@@ -1,6 +1,7 @@
 ﻿using AAEmu.Game.Core.Packets;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.Faction;
+using AAEmu.Game.Models.Game.Music;
 using AAEmu.Game.Models.Game.NPChar;
 using AAEmu.Game.Models.Game.Skills.Templates;
 using AAEmu.Game.Models.Game.Slaves;
@@ -105,6 +106,19 @@ public class BuffEffect : EffectTemplate
         SailFoldBuffs.ApplyAnimExclusivity(target, Buff.Id);
 
         target.Buffs.AddBuff(new Buff(target, caster, casterObj, Buff, source.Skill, time) { AbLevel = abLevel });
+
+        // Songcraft performance effects use the same timed buff as the playing pose. Observe only
+        // the caster's own instrument-animated performance buff; party copies and the song's other
+        // buffs must not start independent animation-end tracking.
+        var skillId = source.Skill?.Template?.Id ?? 0;
+        if (target is Character owner && caster is Character sourceCharacter &&
+            owner.ObjId == sourceCharacter.ObjId &&
+            SongcraftPerformanceManager.IsPerformanceBuff(skillId, Buff))
+        {
+            var liveBuff = target.Buffs.GetEffectFromBuffId(Buff.Id);
+            if (liveBuff?.Caster?.ObjId == owner.ObjId && liveBuff.Skill?.Template?.Id == skillId)
+                SongcraftPerformanceManager.Observe(liveBuff, owner, skillId);
+        }
 
         // Check if a bad buff was applied to a friendly player (bloodlust / Felon).
         // Sail fold "debuffs" are Kind=debuff but target the hull Slave — that is not PvP.

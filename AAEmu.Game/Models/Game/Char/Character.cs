@@ -2541,17 +2541,14 @@ public partial class Character : Unit, ICharacter
         // item clamp one point below their threshold and wait for CSHeirLevlUp; the rest are crossed
         // inside ApplyExpGain. Nothing accrues while the feature is off, so heir levels cannot build
         // up unseen and appear all at once if it is later switched on.
+        var heirLevelsGained = 0;
         var wasHeirEligible = FeaturesManager.Fsets.Check(Feature.heirLevel) &&
                               Level >= HeirGameData.Instance.StartLevel;
         if (wasHeirEligible)
         {
             var previousHeirLevel = HeirLevel;
             HeirExp = HeirGameData.Instance.ApplyExpGain(HeirExp, expDelta);
-
-            // SCHeirLevelUp carries no level value - the client increments its own heir level by
-            // one per packet - so a gain spanning several free levels needs one packet each.
-            for (var gained = previousHeirLevel; gained < HeirLevel; gained++)
-                BroadcastPacket(new SCHeirLevelUpPacket(ObjId), true);
+            heirLevelsGained = HeirLevel - previousHeirLevel;
 
             if (HeirLevel != previousHeirLevel)
             {
@@ -2578,6 +2575,14 @@ public partial class Character : Unit, ICharacter
             Abilities.AddActiveExp(expDelta);
         
         SendPacket(new SCExpChangedPacket(ObjId, expDelta, shouldAddAbilityExp));
+
+        // The client's SCExpChanged handler applies the XP delta using its current heir level.
+        // Send it before SCHeirLevelUp so XP that crosses a threshold is applied to the old level,
+        // then let the level-up notifications advance the client to the server's resulting level.
+        // SCHeirLevelUp carries no level value, so a gain spanning several free levels needs one
+        // packet per level.
+        for (var gained = 0; gained < heirLevelsGained; gained++)
+            BroadcastPacket(new SCHeirLevelUpPacket(ObjId), true);
 
         if (expDelta > 0)
         {
@@ -3382,11 +3387,16 @@ public partial class Character : Unit, ICharacter
 
         // ZoneAuthority: sim presence follows zone key (WZUnitRemoved old + WZUnitState new).
         // Passengers on a sea hull are handed off with the boat — a separate player handoff here
-        // used to ping-pong WZUnitRemoved/State every tick at zone seams.
+        // used to ping-pong WZUnitRemoved/State every tick at zone seams. Mate mounts use their own
+        // zone copy, so the rider is handed off separately after Mate.OnZoneChange announces it.
         var onBoat = Transform.Parent?.GameObject is Slave hull && hull.Template?.IsABoat() == true;
         if (WorldIntegration.ZoneAuthority && !onBoat &&
             lastZoneKey != 0 && newZoneKey != 0 && lastZoneKey != newZoneKey)
         {
+            var mountedMate = Transform.Parent?.GameObject as AAEmu.Game.Models.Game.Units.Mate;
+            if (mountedMate != null)
+                MateManager.AnnounceMateToZone(mountedMate);
+
             var body = WorldIntegration.BuildWzUnitStateBody(this);
             var accepted = WorldIntegration.RelayCharacterZoneHandoff?.Invoke(
                 ObjId, lastZoneKey, newZoneKey, body) ?? false;
@@ -3406,6 +3416,15 @@ public partial class Character : Unit, ICharacter
                 }
 
                 return;
+            }
+
+            if (mountedMate != null && AttachedPoint != AttachPointKind.None)
+            {
+                WorldIntegration.RelayUnitAttachToZoneId?.Invoke(
+                    newZoneKey, ObjId, mountedMate.ObjId, (byte)AttachedPoint, true);
+                Logger.Info(
+                    "Mate rider attach requested after zone handoff rider={0} mount={1} zone={2} point={3}",
+                    ObjId, mountedMate.ObjId, newZoneKey, AttachedPoint);
             }
         }
 

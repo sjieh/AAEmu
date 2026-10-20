@@ -1,5 +1,6 @@
 using AAEmu.Commons.Network;
 using AAEmu.Game.Core.Network.Game;
+using NLog;
 
 namespace AAEmu.Game.Core.Packets.G2C;
 
@@ -14,12 +15,18 @@ namespace AAEmu.Game.Core.Packets.G2C;
 public class SCCombatResourcePointPacket(uint objId, int combatResourceId, ulong point, int updateTime)
     : GamePacket(SCOffsets.SCCombatResourcePointPacket, 1)
 {
+    private static readonly Logger CombatResourceLogger = LogManager.GetLogger("CombatResource");
+
     public override PacketStream Write(PacketStream stream)
     {
+        var payloadStart = stream.Count;
         stream.WriteBc(objId);
         stream.Write(combatResourceId);
         stream.Write(point);
         stream.Write(updateTime);
+        var payloadHex = Convert.ToHexString(stream.Buffer.AsSpan(payloadStart, stream.Count - payloadStart));
+        CombatResourceLogger.Debug("Serialized SCCombatResourcePoint 0x{0:X3}: unit {1}, resourceId {2}, point {3}, updateTime {4}, bodyHex {5}",
+            SCOffsets.SCCombatResourcePointPacket, objId, combatResourceId, point, updateTime, payloadHex);
         return stream;
     }
 }

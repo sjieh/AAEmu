@@ -7,6 +7,8 @@ using AAEmu.Commons.Network;
 using AAEmu.Commons.Network.Core;
 using AAEmu.Game;
 using AAEmu.Game.Core.Managers;
+using AAEmu.Game.Core.Managers.Id;
+using AAEmu.Game.Core.Managers.UnitManagers;
 using AAEmu.Game.Core.Managers.World;
 using AAEmu.Game.Core.Network.Connections;
 using AAEmu.Game.Core.Packets.G2C;
@@ -29,6 +31,7 @@ public class DoodadRemovalResolverVerificationTests
     private const int SyntheticValueTwo = 73;
     private const uint SyntheticZoneId = 4_242;
     private SingletonScope<WorldManager> _worldScope;
+    private SingletonScope<DoodadManager> _doodadScope;
     private SingletonScope<FishSchoolManager> _fishScope;
     private WorldInstance _world;
     private uint _nextObjId = 1_000;
@@ -47,6 +50,7 @@ public class DoodadRemovalResolverVerificationTests
         WorldIntegration.RelayRemoveDoodadToZoneId = null;
 
         _worldScope = new SingletonScope<WorldManager>(new WorldManager(null, null, null, null, null));
+        _doodadScope = new SingletonScope<DoodadManager>(CreateDoodadManager());
         _fishScope = new SingletonScope<FishSchoolManager>(new FishSchoolManager());
 
         var template = new WorldTemplate
@@ -76,6 +80,7 @@ public class DoodadRemovalResolverVerificationTests
         WorldIntegration.RelayRemoveDoodadToZone = _previousRemoveRelay;
         WorldIntegration.RelayRemoveDoodadToZoneId = _previousRemoveRelayByZone;
         _fishScope.Dispose();
+        _doodadScope.Dispose();
         _worldScope.Dispose();
     }
 
@@ -211,6 +216,7 @@ public class DoodadRemovalResolverVerificationTests
             ObjId = id,
             Name = $"Verifier{id}"
         };
+        character.Quests = new CharacterQuests(character);
         if (session != null)
             character.Connection = new GameConnection(session) { ActiveChar = character };
 
@@ -264,6 +270,20 @@ public class DoodadRemovalResolverVerificationTests
 
     private static Skill Skill(SkillTargetSelection targetSelection) =>
         new() { Template = new SkillTemplate { TargetSelection = targetSelection } };
+
+    private static DoodadManager CreateDoodadManager()
+    {
+        var manager = new DoodadManager(
+            Mock.Of<INonUnitObjectIdManager>().Object,
+            Mock.Of<IDoodadIdManager>().Object,
+            Mock.Of<IItemManager>().Object,
+            new Lazy<IHousingManager>(() => Mock.Of<IHousingManager>().Object),
+            Mock.Of<ISusManager>().Object,
+            Mock.Of<IFactionManager>().Object);
+        typeof(DoodadManager).GetField("_funcsByGroups", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(manager, new Dictionary<uint, List<DoodadFunc>>());
+        return manager;
+    }
 
     private static void Execute(BaseUnit caster, BaseUnit target, Skill skill, int radiusMillimeters, int value2 = 0) =>
         new RemoveAllDoodad().Execute(caster, null!, target, null!, null!, skill, null!, DateTime.UtcNow,

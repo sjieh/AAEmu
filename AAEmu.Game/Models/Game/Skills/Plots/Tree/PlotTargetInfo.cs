@@ -52,14 +52,25 @@ public class PlotTargetInfo
     /// to the projectile/damage node expanded to nothing, and the skill played its animation and cooldown
     /// without ever dealing damage.
     ///
-    /// Plain spheres are unaffected: "everything within R of the target" stays anchored on the target.
-    /// Where area_target_kind_id IS set the data wins, exactly as for line corridors.
+    /// When the default source is the caster, its cast-start transform is used. A plot movement controller can
+    /// finish before a delayed area node runs (Backdraft moves its caster 8m backwards), but that must not move
+    /// the server's hit area away from the cast-start telegraph. Other source units still use their live
+    /// transform. Plain spheres are unaffected. area_target_kind_id still selects the origin; when it selects
+    /// the caster, the cast-start pose is used for the cone direction.
     /// </remarks>
     private BaseUnit ResolveConeOrigin(AreaShape shape, PlotState state, BaseUnit fallback)
     {
+        var defaultOrigin = Source ?? state.Caster;
         var origin = shape.AreaTargetKind != AreaTargetKindType.None
             ? ResolveAreaAnchor(shape, state, fallback)
-            : Source ?? state.Caster;
+            : state.Caster != null && defaultOrigin?.ObjId == state.Caster.ObjId
+                ? state.CasterCastStartAnchor
+                : defaultOrigin;
+
+        // Explicit plot data can select OriginalSource or PreviousSource. If that source is the caster,
+        // keep the selected anchor but use the cast-start pose used by the default-caster cone path.
+        if (state.Caster != null && origin?.ObjId == state.Caster.ObjId)
+            origin = state.CasterCastStartAnchor;
 
         // GetAround walks the origin's region; an origin without one would find nothing at all.
         return origin?.Region != null ? origin : fallback;

@@ -28,12 +28,17 @@ public class GlobalCooldown : SpecialEffectAction
         if (value1 == 0)
             return;
 
+        // default_gcd takes precedence over plot-authored GCD values. The skill cast has already
+        // armed its shared GCD before plot effects execute, so leave that value intact here.
+        if (skill?.Template.DefaultGcd == true)
+            return;
+
         var unit = (Unit)caster;
         var plotGcdMs = skill?.ResolvePlotGlobalCooldownMilliseconds(unit, value1) ?? value1;
         var effectGlobalCooldown = DateTime.UtcNow.AddMilliseconds(plotGcdMs);
 
-        // Nonzero plot-authored durations replace the shared skill/weapon GCD and receive weapon-speed and
-        // attack-speed scaling.
+        // For skills without default_gcd, nonzero plot-authored durations replace the shared
+        // skill/weapon GCD and receive weapon-speed and attack-speed scaling.
         unit.GlobalCooldown = effectGlobalCooldown;
     }
 }

@@ -9,7 +9,8 @@ public class ApplySkillTask(
     SkillCaster casterCaster,
     BaseUnit target,
     SkillCastTarget targetCaster,
-    SkillObject skillObject)
+    SkillObject skillObject,
+    BaseUnit castAimAnchor = null)
     : Task
 {
     public override void Execute()
@@ -23,7 +24,7 @@ public class ApplySkillTask(
             }
             return;
         }
-        skill.ApplyEffects(caster, casterCaster, target, targetCaster, skillObject);
+        skill.ApplyEffects(caster, casterCaster, target, targetCaster, skillObject, castAimAnchor);
         skill.EndCastUnlessPlotOwnsIt(caster);
     }
 }

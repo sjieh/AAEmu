@@ -163,7 +163,8 @@ public static class SkillRequirementRules
         Func<SkillRequirement, bool> carriesBuff,
         Func<SkillRequirement, bool> carriesBuffTag,
         out string message,
-        out uint failedRequirementId)
+        out uint failedRequirementId,
+        Func<SkillRequirement, bool> ignoreRequirement = null)
     {
         message = null;
         failedRequirementId = 0;
@@ -175,7 +176,7 @@ public static class SkillRequirementRules
 
         foreach (var requirement in requirements)
         {
-            if (IsIgnoredPeaceZoneForbid(requirement))
+            if (IsIgnoredPeaceZoneForbid(requirement) || ignoreRequirement?.Invoke(requirement) == true)
                 continue;
 
             var hasBuff = carriesBuff?.Invoke(requirement) ?? false;

@@ -30,7 +30,8 @@ public class PlotState(
     SkillCastTarget targetCaster,
     SkillObject skillObject,
     Skill skill,
-    ushort castTlId = 0)
+    ushort castTlId = 0,
+    BaseUnit casterCastStartAnchor = null)
 {
     private bool _cancellationRequest = false;
     private bool _finishChanneling = false;
@@ -67,6 +68,13 @@ public class PlotState(
 
     public Skill ActiveSkill { get; set; } = skill;
     public Unit Caster { get; set; } = caster as Unit;
+    /// <summary>
+    /// Detached caster transform captured for the cast. Targeted player casts pass a pose captured when the
+    /// cast is accepted; other plot casts snapshot the caster when the plot starts. A movement controller can
+    /// move and rotate the live caster before a delayed cone Area node runs, so this keeps the search anchored
+    /// to the position and facing that belong to the cast.
+    /// </summary>
+    public BaseUnit CasterCastStartAnchor { get; } = casterCastStartAnchor ?? CreateCasterCastStartAnchor(caster);
     public SkillCaster CasterCaster { get; set; } = casterCaster;
     public BaseUnit Target { get; set; } = target;
     public SkillCastTarget TargetCaster { get; set; } = targetCaster;
@@ -130,4 +138,20 @@ public class PlotState(
     public bool ChannelingFinishRequested() => _finishChanneling;
     public bool FinishChanneling() => _finishChanneling = true;
     public bool PermitChanneling() => _finishChanneling = false;
+
+    public static BaseUnit CreateCasterCastStartAnchor(BaseUnit caster, double? castFacingYawDegrees = null)
+    {
+        var anchor = new BaseUnit { ObjId = uint.MaxValue, Region = caster.Region };
+        anchor.Transform = caster.Transform.CloneDetached(anchor);
+        if (castFacingYawDegrees.HasValue)
+        {
+            var rotation = anchor.Transform.Local.Rotation;
+            anchor.Transform.Local.SetRotation(
+                rotation.X,
+                rotation.Y,
+                (float)(castFacingYawDegrees.Value * Math.PI / 180.0));
+        }
+
+        return anchor;
+    }
 }

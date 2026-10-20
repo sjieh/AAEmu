@@ -43,5 +43,41 @@
             "Z": 154.5,
             "Yaw": 157.5
         }
+     },
+     {
+        "UnitId": 609, // Andelph Cannon - Cannons for Questions
+        "Position": {
+            "X": 7716.008,
+            "Y": 12277.17,
+            "Z": 635.284,
+            "Yaw": 160.1
+        }
+     },
+     {
+        "UnitId": 609, // Andelph Cannon - Cannons for Questions
+        "Position": {
+            "X": 7723.156,
+            "Y": 12277.3,
+            "Z": 634.0885,
+            "Yaw": 155.75
+        }
+     },
+     {
+        "UnitId": 609, // Andelph Cannon - Cannons for Questions
+        "Position": {
+            "X": 7730.518,
+            "Y": 12276.18,
+            "Z": 634.1375,
+            "Yaw": 151.19
+        }
+     },
+     {
+        "UnitId": 609, // Andelph Cannon - Cannons for Questions
+        "Position": {
+            "X": 7747.174,
+            "Y": 12259.69,
+            "Z": 635.8132,
+            "Yaw": 136.15
+        }
      }
 ]

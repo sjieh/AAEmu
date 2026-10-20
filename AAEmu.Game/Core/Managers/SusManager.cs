@@ -76,7 +76,8 @@ public class SusManager(IWorldManager worldManager) : Singleton<SusManager>, ISu
             return;
         }
         
-        var deltaPos = player.Transform.World.ClonePosition() - last.pos;
+        var currentPos = player.Transform.World.ClonePosition();
+        var deltaPos = currentPos - last.pos;
         var deltaFlatPos = deltaPos with { Z = 0 };
 
         if (player.IsRiding == false &&
@@ -93,7 +94,11 @@ public class SusManager(IWorldManager worldManager) : Singleton<SusManager>, ISu
                 // Looks like this player is moving a bit fast, better make a note of it
                 LogActivity(CategoryCheating,
                     player,
-                    $"Player {player.Name} seems to be moving a bit fast {observedSpeed:F1} m/s (max {playerCheckSpeed:F1})");
+                    $"Player {player.Name} seems to be moving a bit fast {observedSpeed:F1} m/s (max {playerCheckSpeed:F1}); " +
+                    $"zone={player.Transform.ZoneId} sample={deltaTime:F1}s " +
+                    $"from=({last.pos.X:F1},{last.pos.Y:F1},{last.pos.Z:F1}) " +
+                    $"to=({currentPos.X:F1},{currentPos.Y:F1},{currentPos.Z:F1}) " +
+                    $"delta=({deltaPos.X:F1},{deltaPos.Y:F1},{deltaPos.Z:F1})");
                 // player.SendMessage($"Speed {observedSpeed:F1} m/s (max {playerCheckSpeed:F1}) !!!");
             }
             else

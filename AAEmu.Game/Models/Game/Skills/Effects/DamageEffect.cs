@@ -687,8 +687,16 @@ public class DamageEffect : EffectTemplate
         var manaStolen = (int)(value * (ManaStealRatio / 100.0f));
 
         // ID=6151 Test Drive, or explicitly authorized plot self-damage, may bypass CanAttack.
-        if (!caster.CanAttack(trg) && !AllowsCanAttackBypass(castObj, caster, trg, source?.Skill))
+        if (!caster.CanAttack(trg) &&
+            !AllowsCanAttackBypass(castObj, caster, trg, source?.Skill) &&
+            !AllowsTaggedNpcDeviceDamage(source, caster, trg))
             return;
+
+        // ReduceCurrentHp can synchronously run Npc.DoDie, which resolves quest and loot credit
+        // from the NPC's tagger/aggro state. Record this hit first so a lethal hit (for example,
+        // a player-operated quest cannon) is attributed before the death path reads that state.
+        if (trg is Npc damagedNpc)
+            damagedNpc.OnDamageReceived((Unit)caster, DamageEffectRules.AggroValue(value, AggroMultiplier));
 
         // mana_damage (6 rows): the hit drains the victim's mana rather than its health. It still counts as a
         // hostile hit everywhere else - the packet, the aggro table, the events and the caster's stolen-mana
@@ -823,10 +831,6 @@ public class DamageEffect : EffectTemplate
                         AiAggroEntry.FromDamageValue(caster.ObjId, ((Unit)caster).SummarizeDamage)));
             }
 
-            // aggro_multiplier scales what this hit is worth on the victim's aggro table. Under
-            // ZoneAuthority the aggro is applied by the zone from the WZUnitDamaged relay, whose signature
-            // carries the raw damage, so the factor applies to the local path only.
-            npc.OnDamageReceived((Unit)caster, DamageEffectRules.AggroValue(value, AggroMultiplier));
         }
 
         //Invoke even if damage is 0
@@ -1087,5 +1091,21 @@ public class DamageEffect : EffectTemplate
         if (caster.ObjId != trg.ObjId)
             return false;
         return WorldIntegration.AllowsPlotSelfDamageBypass?.Invoke(trg) == true;
+    }
+
+    /// <summary>
+    /// A device skill may deliberately damage a narrow set of NPCs even when the device's faction
+    /// cannot attack that NPC faction. The effect row's target_npc_tag_id is the authorization: it
+    /// limits this bypass to that explicit NPC-targeted damage row, and never permits device damage
+    /// to characters or untagged units.
+    /// </summary>
+    private bool AllowsTaggedNpcDeviceDamage(EffectSource source, BaseUnit caster, BaseUnit target)
+    {
+        var skillTemplate = source?.Skill?.Template;
+        if (caster is not Slave || target is not Npc || skillTemplate?.Effects == null)
+            return false;
+
+        return skillTemplate.Effects.Any(effect =>
+            ReferenceEquals(effect.Template, this) && effect.TargetNpcTagId > 0);
     }
 }

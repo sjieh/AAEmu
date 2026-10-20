@@ -2,12 +2,15 @@ using AAEmu.Game.Core.Packets;
 using AAEmu.Game.GameData;
 using AAEmu.Game.Models.Game.Skills.Templates;
 using AAEmu.Game.Models.Game.Units;
+using NLog;
 
 namespace AAEmu.Game.Models.Game.Skills.Effects;
 
 // combat_resource_effects — grants/consumes a v10 combat resource (combo-point style resource) on the unit.
 public class CombatResourceEffect : EffectTemplate
 {
+    private static readonly Logger CombatResourceLogger = LogManager.GetLogger("CombatResource");
+
     public int MinCombatResource { get; set; }
     public int MaxCombatResource { get; set; }
     public int CombatResourceId { get; set; }
@@ -56,12 +59,12 @@ public class CombatResourceEffect : EffectTemplate
         if (!unit.TryApplyCombatResourceEffect(resourceId, amount, ResetRemainTime,
                 castTlId, skillId, out var before, out var after))
         {
-            Logger.Debug("CombatResourceEffect: resource {0} change on {1} suppressed or unchanged",
+            CombatResourceLogger.Debug("CombatResourceEffect: resource {0} change on {1} suppressed or unchanged",
                 resourceId, unit.ObjId);
             return;
         }
 
-        Logger.Debug($"CombatResourceEffect: resource {resourceId} on {unit.ObjId} {before} -> {after} (amount {amount}, resetRemainTime {ResetRemainTime})");
+        CombatResourceLogger.Debug($"CombatResourceEffect: resource {resourceId} on {unit.ObjId} {before} -> {after} (amount {amount}, resetRemainTime {ResetRemainTime})");
 
         // combat_resources.resouece_send_type_id decides the audience: 1 Self, 2 Broadcast.
         var resource = CombatResourceGameData.Instance.Get(resourceId);
@@ -89,7 +92,7 @@ public class CombatResourceEffect : EffectTemplate
         if (fromSkill != 0)
             return fromSkill;
 
-        Logger.Debug("CombatResourceEffect: combat_resource_id 0 and skill {0} names no resource — skipped",
+        CombatResourceLogger.Debug("CombatResourceEffect: combat_resource_id 0 and skill {0} names no resource — skipped",
             source?.Skill?.Template?.Id ?? 0);
         return 0;
     }

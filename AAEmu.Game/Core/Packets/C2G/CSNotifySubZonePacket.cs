@@ -10,9 +10,16 @@ public class CSNotifySubZonePacket() : GamePacket(CSOffsets.CSNotifySubZonePacke
         var subZoneId = stream.ReadUInt32();
         if (subZoneId == 0) return;
 
-        Connection.ActiveChar.SubZoneId = subZoneId; // needed to store Memory Tome points for Recall
+        var character = Connection.ActiveChar;
+        var previousSubZoneId = character.SubZoneId;
+        character.SubZoneId = subZoneId; // needed to store Memory Tome points for Recall
 
-        Logger.Info($"Enter RegionId: {subZoneId} by {Connection.ActiveChar.Name} ({Connection.ActiveChar.Id})");
-        Connection.ActiveChar.Portals.NotifySubZone(subZoneId);
+        var position = character.Transform.World.Position;
+        Logger.Info(
+            $"Subzone entered: {character.Name} ({character.Id}) subZoneId={subZoneId} " +
+            $"previous={previousSubZoneId} world={character.Transform.WorldId} zone={character.Transform.ZoneId} " +
+            $"position=({position.X:F1}, {position.Y:F1}, {position.Z:F1})");
+
+        character.Portals.NotifySubZone(subZoneId);
     }
 }

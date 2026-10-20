@@ -49,6 +49,7 @@ public class PlotNextEvent
         if (effects == null)
             return 0;
 
+        var combatSyncTime = 0;
         foreach (var effect in effects)
         {
             var template = SkillManager.Instance.GetEffectTemplate(effect.ActualId, effect.ActualType);
@@ -61,10 +62,15 @@ public class PlotNextEvent
             var anim = AnimationManager.Instance.GetAnimation((uint)specialEffect.Value1);
             if (anim == null)
                 continue;
-            return anim.CombatSyncTime;
+
+            // Plot events may first stop the current animation and then start the skill-specific
+            // animation. The stop animation often has no combat-sync entry, so returning the first
+            // Anim effect makes projectile hits ignore the firing animation's sync point entirely.
+            // These animations are issued together; use the last sync point reached by any of them.
+            combatSyncTime = Math.Max(combatSyncTime, anim.CombatSyncTime);
         }
 
-        return 0;
+        return combatSyncTime;
     }
 
     private int GetAnimDelay(IEnumerable<PlotEventEffect> effects)
@@ -102,7 +108,10 @@ public class PlotNextEvent
             state.Caster.GlobalCooldownMul / 100.0);
         var animTime = (int)(GetAnimDelay(node.Event.Effects) * animationFactor);
         var projectileTime = GetProjectileDelay(eventInstance.Source, eventInstance.Target);
-        var skillCtrlTime = GetSkillControllerDelay(node);
+        // The edge's use_exe_time flag controls whether a child waits for its parent's
+        // controller execution. Backdraft deliberately sets this false on its hit edges so
+        // target selection and damage happen before the knockback controller completes.
+        var skillCtrlTime = UseExeTime ? GetSkillControllerDelay(node) : 0;
         var delay = animTime + projectileTime + skillCtrlTime;
         if (Casting)
             delay += (int)(state.Caster.ApplySkillModifiers(state.ActiveSkill, Static.SkillAttribute.CastTime,

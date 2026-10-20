@@ -458,19 +458,42 @@ public class MateManager(WorldInstance parentWorldInstance)
         if (zoneId == 0)
             return;
 
-        if (mate.ZoneAnnouncedTo != 0 && mate.ZoneAnnouncedTo != zoneId)
-            WithdrawMateFromZone(mate);
-
         if (mate.ZoneAnnouncedTo == zoneId)
             return;
 
         var body = WorldIntegration.BuildWzUnitStateBody(mate);
         if (body is not { Length: > 0 })
+        {
+            Logger.Warn(
+                "Mate zone announce refused: empty WZ state obj={0} owner={1} oldZone={2} newZone={3}",
+                mate.ObjId, mate.OwnerObjId, mate.ZoneAnnouncedTo, zoneId);
             return;
+        }
 
-        WorldIntegration.RelayUnitStateToZone?.Invoke(zoneId, mate.ObjId, body);
+        var oldZoneId = mate.ZoneAnnouncedTo;
+        var accepted = WorldIntegration.RelayUnitStateToZone?.Invoke(zoneId, mate.ObjId, body) ?? false;
+        if (!accepted)
+        {
+            Logger.Warn(
+                "Mate zone announce deferred: obj={0} owner={1} oldZone={2} newZone={3} pos=({4:0.0},{5:0.0},{6:0.0})",
+                mate.ObjId, mate.OwnerObjId, oldZoneId, zoneId,
+                mate.Transform.World.Position.X, mate.Transform.World.Position.Y, mate.Transform.World.Position.Z);
+            return;
+        }
+
+        // Create the destination copy before removing the old one. A missing or dropping target
+        // zone must not leave the mate without a live zone representation.
+        if (oldZoneId != 0)
+        {
+            WorldIntegration.RelayUnitRemovedToZoneId?.Invoke(oldZoneId, mate.ObjId);
+            Logger.Info("WZUnitRemoved for mate obj={0} zoneId={1} reason=zone-handoff", mate.ObjId, oldZoneId);
+        }
+
         mate.ZoneAnnouncedTo = zoneId;
-        Logger.Info("WZUnitState queued for mate obj={0} zoneId={1}", mate.ObjId, zoneId);
+        var position = mate.Transform.World.Position;
+        Logger.Info(
+            "Mate zone handoff complete obj={0} owner={1} oldZone={2} newZone={3} pos=({4:0.0},{5:0.0},{6:0.0})",
+            mate.ObjId, mate.OwnerObjId, oldZoneId, zoneId, position.X, position.Y, position.Z);
     }
 
     /// <summary>Drops the mate from the zone that currently owns it.</summary>

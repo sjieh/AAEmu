@@ -77,6 +77,22 @@ public static class Program
         WorldIntegration.IsZoneInstanceLoaded = (zoneId, instanceId) =>
             ZoneSession.Instance.GetByZoneInstance(zoneId, instanceId) != null;
         var zoneHost = new ZoneHostSupervisor(appConfig.ZoneHost);
+        void DisposeZoneHosts()
+        {
+            try
+            {
+                zoneHost.Dispose();
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn(ex, "ZoneHost shutdown cleanup failed");
+            }
+        }
+
+        // The server also has forced shutdown paths that call Environment.Exit, bypassing
+        // the async Main finally block. ProcessExit keeps detached ZoneHost children owned.
+        EventHandler processExitCleanup = (_, _) => DisposeZoneHosts();
+        AppDomain.CurrentDomain.ProcessExit += processExitCleanup;
         WorldIntegration.ZoneHostSpawnEnabled = appConfig.ZoneHost.Enabled;
         WorldIntegration.TryStartInstanceZoneHost = zoneHost.TryStart;
         WorldIntegration.PlantInstanceLevelDoodads = QuestTalkDoodads.EnsureInstanceCopy;
@@ -163,8 +179,17 @@ public static class Program
             var zone = PlayerEnterService.ForZoneId(zoneId)
                        ?? (Environment.GetEnvironmentVariable("AAEMU_ZONE_PRIMARY_FALLBACK") == "1"
                            ? PlayerEnterService.PrimaryZone() : null);
-            if (zone == null || body == null || body.Length == 0)
-                return;
+            if (body == null || body.Length == 0)
+            {
+                Logger.Warn("WZUnitState refused: empty body zoneId={0} obj={1}", zoneId, objId);
+                return false;
+            }
+
+            if (zone == null)
+            {
+                Logger.Warn("WZUnitState refused: no ZoneLoaded zoneId={0} obj={1}", zoneId, objId);
+                return false;
+            }
 
             // This unit is being created in the zone, so nothing it was previously told about applies.
             // Object ids are recycled and the buff record is keyed by id, so a new unit would otherwise
@@ -174,6 +199,7 @@ public static class Program
             zone.SendPacket(new WZUnitStatePacket(body));
             Logger.Info(
                 "WZUnitState (non-player) → zoneId={0} obj={1} bodyLen={2}", zone.ZoneId, objId, body.Length);
+            return true;
         };
         WorldIntegration.OnPlayerLeave = bcId =>
         {
@@ -1320,7 +1346,12 @@ public static class Program
         {
             var zone = PlayerEnterService.ForZoneId(zoneId);
             if (zone == null)
+            {
+                Logger.Warn(
+                    "WZUnitAttached/Detached refused: no ZoneLoaded zoneId={0} unit={1} target={2} attached={3}",
+                    zoneId, unitId, targetId, attached);
                 return;
+            }
             if (attached)
             {
                 zone.SendPacket(new WZUnitAttachedPacket(unitId, targetId, attachPoint));
@@ -1562,6 +1593,11 @@ public static class Program
         }
         finally
         {
+            // ZoneHost processes are detached from this console, so they must be stopped by
+            // their owning supervisor before World exits or they would outlive this process.
+            AppDomain.CurrentDomain.ProcessExit -= processExitCleanup;
+            DisposeZoneHosts();
+
             WorldIntegration.ZoneAuthority = false;
             WorldIntegration.TryEnterZone = null;
             WorldIntegration.IsZoneLoaded = null;

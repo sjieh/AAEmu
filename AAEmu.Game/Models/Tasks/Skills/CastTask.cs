@@ -9,7 +9,8 @@ public class CastTask(
     SkillCaster casterCaster,
     BaseUnit target,
     SkillCastTarget targetCaster,
-    SkillObject skillObject)
+    SkillObject skillObject,
+    BaseUnit castAimAnchor = null)
     : SkillTask(skill)
 {
     public override void Execute()
@@ -17,6 +18,6 @@ public class CastTask(
         if (Skill.Cancelled)
             return;
 
-        Skill.Cast(caster, casterCaster, target, targetCaster, skillObject);
+        Skill.Cast(caster, casterCaster, target, targetCaster, skillObject, castAimAnchor);
     }
 }

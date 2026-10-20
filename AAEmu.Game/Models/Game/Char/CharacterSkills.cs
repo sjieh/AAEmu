@@ -1,5 +1,7 @@
 using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Packets.G2C;
+using AAEmu.Game.Models.Game.Items;
+using AAEmu.Game.Models.Game.Items.Actions;
 using AAEmu.Game.Models.Game.Skills;
 using AAEmu.Game.Models.Game.Skills.Templates;
 using MySql.Data.MySqlClient;
@@ -22,6 +24,7 @@ public class CharacterSkills(Character owner)
     // Tracks the initial skill-loading phase.
     private bool _loadingSkills;
     private readonly List<uint> _removed = [];
+    private readonly HashSet<uint> _dwarfJuggernautPassiveIds = [];
     private readonly object _comboFollowUpsLock = new();
     private readonly Dictionary<uint, DateTime> _comboFollowUps = [];
     public Dictionary<uint, Skill> Skills { get; } = [];
@@ -32,7 +35,48 @@ public class CharacterSkills(Character owner)
     /// Try to learn a new Skill.
     /// </summary>
     /// <returns>True when the skill is learned afterwards, including when it was already known.</returns>
-    public bool AddSkill(uint skillId)
+    public bool AddSkill(uint skillId) => AddSkill(skillId, consumeLearnItem: true);
+
+    /// <summary>
+    /// Checks the normal race, level, ability and skill-point requirements while leaving item
+    /// payment to a cast effect that owns the cost in <c>skill_effects</c>.
+    /// </summary>
+    internal bool CanLearnSkillWithoutLearnItemCost(uint skillId)
+    {
+        if (Skills.ContainsKey(skillId))
+            return false;
+
+        if (HeirGameData.Instance.TryGetHeirSkillForSuccessor(skillId, out _, out _))
+            return false;
+
+        var template = SkillManager.Instance.GetSkillTemplate(skillId);
+        if (template == null)
+            return false;
+
+        if (template.CharRaceId > 0)
+        {
+            if ((int)Owner.Race != template.CharRaceId || Owner.Level < template.AbilityLevel)
+                return false;
+        }
+        else if (template.AbilityId > 0 &&
+                 template.AbilityId != Owner.Ability1 &&
+                 template.AbilityId != Owner.Ability2 &&
+                 template.AbilityId != Owner.Ability3)
+        {
+            return false;
+        }
+
+        var points = ExperienceManager.Instance.GetSkillPointsForLevel(Owner.Level);
+        points -= GetUsedSkillPoints(AbilityType.General);
+        return template.SkillPoints <= points;
+    }
+
+    /// <summary>
+    /// Learns a skill whose item requirement has already been validated and consumed by its skill effect.
+    /// </summary>
+    internal bool AddSkillWithoutLearnItemCost(uint skillId) => AddSkill(skillId, consumeLearnItem: false);
+
+    private bool AddSkill(uint skillId, bool consumeLearnItem)
     {
         // Successors are selected through CSActivateHeirSkill and remain separate from the learned
         // base-skill table. Accepting one here would persist it as an ordinary learned skill.
@@ -45,12 +89,39 @@ public class CharacterSkills(Character owner)
         // Check if what we want to learn is part of an active skill tree (or not part of one)
         var template = SkillManager.Instance.GetSkillTemplate(skillId);
         if (template == null)
+        {
+            Logger.Warn("LearnSkill reject {0}: skill={1} has no template", Owner.Name, skillId);
             return false;
-        if (template.AbilityId > 0 &&
+        }
+
+        // Race skills live outside the three selected skill trees. Their own race and player-level
+        // requirements are stored on the skill row; treating AbilityId as a normal tree requirement
+        // silently rejects Dwarf/Warborn transformation skills for characters without that tree.
+        if (template.CharRaceId > 0)
+        {
+            if ((int)Owner.Race != template.CharRaceId)
+            {
+                Logger.Warn("LearnSkill reject {0}: skill={1} requires race={2}, character race={3}",
+                    Owner.Name, skillId, template.CharRaceId, (int)Owner.Race);
+                return false;
+            }
+
+            if (Owner.Level < template.AbilityLevel)
+            {
+                Logger.Info("LearnSkill reject {0}: skill={1} requires level={2}, character level={3}",
+                    Owner.Name, skillId, template.AbilityLevel, Owner.Level);
+                return false;
+            }
+        }
+        else if (template.AbilityId > 0 &&
             template.AbilityId != Owner.Ability1 &&
             template.AbilityId != Owner.Ability2 &&
             template.AbilityId != Owner.Ability3)
+        {
+            Logger.Info("LearnSkill reject {0}: skill={1} requires ability={2}; active abilities are {3}, {4}, {5}",
+                Owner.Name, skillId, template.AbilityId, Owner.Ability1, Owner.Ability2, Owner.Ability3);
             return false;
+        }
 
         // Get total skill points for the player's level
         var points = ExperienceManager.Instance.GetSkillPointsForLevel(Owner.Level);
@@ -68,11 +139,49 @@ public class CharacterSkills(Character owner)
             return false;
         }
 
-        // Check if we already learned it
+        // The database owns item requirements for skills. Most skills have no learn item, but
+        // racial transformation skills can require one (for example, Dwarf Summon Juggernaut).
+        // Validate the pair before consuming anything so malformed rows cannot partially learn.
         if (Skills.TryGetValue(skillId, out var skill))
+        {
             Owner.SendPacket(new SCSkillLearnedPacket(skill));
-        else
-            AddSkill(template, 1, true);
+            Logger.Info("LearnSkill accepted {0}: skill={1} was already learned", Owner.Name, skillId);
+            return true;
+        }
+
+        if (consumeLearnItem &&
+            ((template.SkillLearnItemId == 0) != (template.SkillLearnItemAmount == 0) ||
+             template.SkillLearnItemAmount < 0))
+        {
+            Logger.Warn("LearnSkill reject {0}: skill={1} has invalid learn-item requirement item={2} amount={3}",
+                Owner.Name, skillId, template.SkillLearnItemId, template.SkillLearnItemAmount);
+            return false;
+        }
+
+        if (consumeLearnItem && template.SkillLearnItemId > 0)
+        {
+            if (!Owner.Inventory.CheckItems(SlotType.Inventory, template.SkillLearnItemId, template.SkillLearnItemAmount))
+            {
+                Logger.Info("LearnSkill reject {0}: skill={1} requires item={2} amount={3}",
+                    Owner.Name, skillId, template.SkillLearnItemId, template.SkillLearnItemAmount);
+                return false;
+            }
+
+            var consumed = Owner.Inventory.Bag.ConsumeItem(
+                ItemTaskType.SkillReagents, template.SkillLearnItemId, template.SkillLearnItemAmount, null);
+            if (consumed != template.SkillLearnItemAmount)
+            {
+                Logger.Warn("LearnSkill reject {0}: skill={1} consumed {2}/{3} learn items (item={4})",
+                    Owner.Name, skillId, consumed, template.SkillLearnItemAmount, template.SkillLearnItemId);
+                return false;
+            }
+        }
+
+        AddSkill(template, 1, true);
+
+        if (consumeLearnItem)
+            Logger.Info("LearnSkill accepted {0}: skill={1} race={2} level={3}",
+                Owner.Name, skillId, (int)Owner.Race, Owner.Level);
         return true;
     }
 
@@ -88,7 +197,7 @@ public class CharacterSkills(Character owner)
         {
             Id = template.Id,
             Template = template,
-            Level = template.LevelStep > 0 ? (byte)((Owner.GetAbLevel(template.AbilityId) - template.AbilityLevel) / template.LevelStep + 1) : (byte)1
+            Level = SkillRankRules.ForUnit(template, Owner)
         };
         Skills.Add(skill.Id, skill);
 
@@ -181,6 +290,84 @@ public class CharacterSkills(Character owner)
             AddBuff(passiveId, notify: false);
         // Check ability-branch passives after the character levels up.
         GrantUnlockedTreePassives(notify: false);
+        GrantDwarfRacialSkills(notify: true);
+    }
+
+    /// <summary>
+    /// Grants the Dwarf's transformation cancel skill unconditionally, then grants Juggernaut
+    /// auto-learn skills and passives at their character-level gates once Summon Juggernaut is learned.
+    /// </summary>
+    internal void GrantDwarfRacialSkills(bool notify)
+    {
+        if ((int)Owner.Race != DwarfTransformationLearnRules.DwarfRaceId)
+            return;
+
+        LearnDwarfRaceSkill(
+            DwarfTransformationLearnRules.CancelTransformationSkillId,
+            notify,
+            ignoreLevelRequirement: true);
+
+        var skillManager = SkillManager.Instance;
+        var juggernautPassives = skillManager.GetLevelUnlockedPassiveBuffs(
+            DwarfTransformationLearnRules.JuggernautAbilityId,
+            int.MaxValue);
+        foreach (var template in juggernautPassives)
+            _dwarfJuggernautPassiveIds.Add(template.Id);
+
+        // The form skills and passives are only useful once the character has learned the form.
+        if (!Skills.ContainsKey(DwarfTransformationLearnRules.SummonJuggernautSkillId))
+            return;
+
+        foreach (var template in skillManager.GetAutoLearnRaceSkills(
+                     DwarfTransformationLearnRules.DwarfRaceId,
+                     DwarfTransformationLearnRules.JuggernautAbilityId,
+                     Owner.Level))
+        {
+            LearnDwarfRaceSkill(template.Id, notify);
+        }
+
+        foreach (var template in juggernautPassives.Where(template => template.Level <= Owner.Level))
+        {
+            if (PassiveBuffs.ContainsKey(template.Id))
+                continue;
+
+            // These race passives are inactive in content because they are not meant to be purchased
+            // with ordinary skill points. Their level gates are still authoritative.
+            var passive = new PassiveBuff(template);
+            PassiveBuffs.Add(passive.Id, passive);
+            if (notify)
+                Owner.BroadcastPacket(new SCBuffLearnedPacket(Owner.ObjId, passive.Id), true);
+            passive.Apply(Owner);
+            Logger.Info("Dwarf Juggernaut passive auto-learned for {0}: passive={1} level={2}",
+                Owner.Name, passive.Id, Owner.Level);
+        }
+    }
+
+    private void LearnDwarfRaceSkill(uint skillId, bool notify, bool ignoreLevelRequirement = false)
+    {
+        var template = SkillManager.Instance.GetSkillTemplate(skillId);
+        if (template == null ||
+            template.CharRaceId != DwarfTransformationLearnRules.DwarfRaceId ||
+            (!ignoreLevelRequirement && template.AbilityLevel > Owner.Level))
+            return;
+
+        var rank = SkillRankRules.ForUnit(template, Owner);
+        if (Skills.TryGetValue(skillId, out var learned))
+        {
+            if (learned.Level == rank)
+                return;
+
+            learned.Level = rank;
+            if (notify)
+                Owner.SendPacket(new SCSkillLearnedPacket(learned));
+            Logger.Info("Dwarf race skill rank updated for {0}: skill={1} rank={2}",
+                Owner.Name, skillId, rank);
+            return;
+        }
+
+        AddSkill(template, 1, notify);
+        Logger.Info("Dwarf race skill auto-learned for {0}: skill={1} level={2}",
+            Owner.Name, skillId, Owner.Level);
     }
 
     // Automatically grant passives unlocked by reaching
@@ -434,7 +621,7 @@ public class CharacterSkills(Character owner)
         // TODO: with price...
         foreach (var skill in new List<Skill>(Skills.Values))
         {
-            if (skill.Template.AbilityId != abilityId)
+            if (skill.Template.AbilityId != abilityId || skill.Template.CharRaceId > 0)
                 continue;
             Skills.Remove(skill.Id);
             _removed.Add(skill.Id);
@@ -442,7 +629,7 @@ public class CharacterSkills(Character owner)
 
         foreach (var buff in new List<PassiveBuff>(PassiveBuffs.Values))
         {
-            if (buff.Template.AbilityId != abilityId)
+            if (buff.Template.AbilityId != abilityId || _dwarfJuggernautPassiveIds.Contains(buff.Id))
                 continue;
             buff.Remove(Owner);
             PassiveBuffs.Remove(buff.Id);
@@ -451,7 +638,20 @@ public class CharacterSkills(Character owner)
 
         Owner.HeirSkills?.RemoveByAbility(abilityId, notifyClient: notifyClient);
         if (notifyClient)
+        {
             Owner.BroadcastPacket(new SCSkillsResetPacket(Owner.ObjId, abilityId), true);
+
+            // Racial skills share an AbilityId with their form's content tree but are not members of
+            // the character's resettable ability tree. Restore them after the client processes reset.
+            if ((int)Owner.Race == DwarfTransformationLearnRules.DwarfRaceId)
+            {
+                foreach (var skill in Skills.Values.Where(skill => skill.Template.CharRaceId > 0))
+                    Owner.SendPacket(new SCSkillLearnedPacket(skill));
+                foreach (var passive in PassiveBuffs.Values.Where(passive =>
+                             _dwarfJuggernautPassiveIds.Contains(passive.Id)))
+                    Owner.SendPacket(new SCBuffLearnedPacket(Owner.ObjId, passive.Id));
+            }
+        }
     }
 
     /// <summary>
@@ -499,7 +699,9 @@ public class CharacterSkills(Character owner)
                                 Id = reader.GetUInt32("id"),
                                 Level = reader.GetByte("level")
                             };
-                            AddSkill(skill.Id);
+                            // Persisted skills have already paid their learn-item cost. Restore them
+                            // without consuming the item again on every login.
+                            AddSkill(skill.Id, consumeLearnItem: false);
                             break;
                         case SkillType.Buff:
                             var buffId = reader.GetUInt32("id");
@@ -524,6 +726,7 @@ public class CharacterSkills(Character owner)
 
         // Initial load is complete; grant any newly unlocked passives.
         _loadingSkills = false;
+        GrantDwarfRacialSkills(notify: false);
         GrantUnlockedTreePassives(notify: false);
     }
 

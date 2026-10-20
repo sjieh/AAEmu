@@ -50,10 +50,14 @@ public class Tagging(Unit owner)
     {
         lock (_lock)
         {
-            // Check if the character is a pet, if so, propagate its user
+            // Propagate pet and slave damage to the character who owns or is operating it.
             if (checkUnit is Units.Mate mate)
             {
                 checkUnit = WorldManager.Instance.GetCharacterByObjId(mate.OwnerObjId) ?? checkUnit;
+            }
+            else if (checkUnit is Slave)
+            {
+                checkUnit = checkUnit.GetOwnerCharacter() ?? checkUnit;
             }
 
             if (checkUnit is Character player)

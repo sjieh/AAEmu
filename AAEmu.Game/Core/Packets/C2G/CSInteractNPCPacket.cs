@@ -19,10 +19,14 @@ public class CSInteractNPCPacket() : GamePacket(CSOffsets.CSInteractNPCPacket, 1
         var objId = stream.ReadBc();
         var isTargetChanged = stream.ReadBoolean();
 
-        Logger.Debug("InteractNPC, BcId: {0}, TargetChanged: {1}", objId, isTargetChanged);
-
         var character = Connection.ActiveChar;
-        if (character == null || objId == 0 || character.ParentWorld.GetUnit(objId) is not Npc npc)
+        var npc = objId == 0 ? null : character?.ParentWorld?.GetUnit(objId) as Npc;
+        Logger.Debug(
+            "InteractNPC, BcId: {0}, TargetChanged: {1}, Character: {2}, npcTemplate: {3}, npcName: {4}",
+            objId, isTargetChanged, character?.Name ?? "<disconnected>", npc?.TemplateId ?? 0,
+            npc?.Template?.Name ?? "<unresolved>");
+
+        if (character == null || objId == 0 || npc == null)
         {
             Logger.Warn(
                 "Rejected NPC interaction target {0} from {1} ({2})",
@@ -35,6 +39,8 @@ public class CSInteractNPCPacket() : GamePacket(CSOffsets.CSInteractNPCPacket, 1
         if (isTargetChanged)
             character.CurrentTarget = npc;
 
+        var questTalk = QuestManager.Instance.IsQuestTalkNpc(npc.TemplateId);
+
         // A zero-entry table is the native representation of no known aggro for this NPC.
         Connection.SendPacket(new SCAiAggroPacket(objId));
 
@@ -45,8 +51,12 @@ public class CSInteractNPCPacket() : GamePacket(CSOffsets.CSInteractNPCPacket, 1
         // service skill and the actions of its authored interaction set are listed together.
         var skills = NpcInteractionRules.ComposeSkills(
             npc.Template,
-            QuestManager.Instance.IsQuestTalkNpc(npc.TemplateId),
+            questTalk,
             NpcInteractionGameData.Instance.GetSkills(npc.Template.NpcInteractionSetId));
+        Logger.Debug(
+            "InteractNPC options, player={0}, npcObjId={1}, npcTemplate={2}, npcName={3}, questTalk={4}, skills=[{5}]",
+            character.Name, objId, npc.TemplateId, npc.Template?.Name ?? "<unnamed>", questTalk,
+            string.Join(",", skills));
         character.SendPacket(new SCNpcInteractionSkillListPacket(objId, 0, 1, 0, 0, 0, [.. skills]));
 
         // The cargo dialog reads the native goods cache without requesting its initial page.

@@ -22,14 +22,18 @@ public class CSStartInteractionPacket() : GamePacket(CSOffsets.CSStartInteractio
         var mouseButton = stream.ReadByte();
         var modifierKeys = stream.ReadInt32();
 
-        Logger.Warn("StartInteraction, NpcObjId: {0}, objId: {1}, extraInfo: {2}, pickId: {3}, mouse: {4}, mods: {5}",
-            npcObjId, objId, extraInfo, pickId, mouseButton, modifierKeys);
-
         var character = Connection.ActiveChar;
         var npc = character?.ParentWorld?.GetNpc(npcObjId);
+        Logger.Warn(
+            "StartInteraction, NpcObjId: {0}, npcTemplate: {1}, npcName: {2}, objId: {3}, extraInfo: {4}, pickId: {5}, mouse: {6}, mods: {7}",
+            npcObjId, npc?.TemplateId ?? 0, npc?.Template?.Name ?? "<unresolved>", objId, extraInfo, pickId, mouseButton,
+            modifierKeys);
+
         if (npc != null)
         {
             character.CurrentInteractionObject = npc;
+
+            var questTalk = QuestManager.Instance.IsQuestTalkNpc(npc.TemplateId);
 
             // The client renders one dynamic action per entry, so the reply carries everything the NPC
             // offers: the gated store front, the service skill its template flags name, and the skills
@@ -44,7 +48,7 @@ public class CSStartInteractionPacket() : GamePacket(CSOffsets.CSStartInteractio
             var skills = NpcInteractionRules
                 .ComposeSkills(
                     npc.Template,
-                    QuestManager.Instance.IsQuestTalkNpc(npc.TemplateId),
+                    questTalk,
                     NpcInteractionGameData.Instance.GetSkills(npc.Template.NpcInteractionSetId))
                 .ToList();
 
@@ -62,6 +66,11 @@ public class CSStartInteractionPacket() : GamePacket(CSOffsets.CSStartInteractio
 
             if (storeSkill > 0 && !skills.Contains(storeSkill))
                 skills.Insert(0, storeSkill);
+
+            Logger.Debug(
+                "StartInteraction options, player={0}, npcObjId={1}, npcTemplate={2}, npcName={3}, questTalk={4}, skills=[{5}]",
+                character.Name, npcObjId, npc.TemplateId, npc.Template?.Name ?? "<unnamed>", questTalk,
+                string.Join(",", skills));
 
             character.SendPacket(new SCNpcInteractionSkillListPacket(npcObjId, objId, extraInfo,
                 pickId, mouseButton, modifierKeys, [.. skills]));

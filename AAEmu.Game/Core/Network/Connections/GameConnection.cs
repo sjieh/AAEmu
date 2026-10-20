@@ -9,11 +9,13 @@ using AAEmu.Game.Models;
 using AAEmu.Game.Models.Account;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.Housing;
+using NLog;
 
 namespace AAEmu.Game.Core.Network.Connections;
 
 public class GameConnection
 {
+    private static readonly Logger CombatResourceLogger = LogManager.GetLogger("CombatResource");
     private readonly ISession _session;
     /// <summary>
     /// Serializes Encode+send for level-5 packets so SCMessageCount order matches TCP write order.
@@ -77,7 +79,24 @@ public class GameConnection
         packet.Connection = this;
         // Lock covers count allocation inside Encode and the socket write.
         lock (_sendLock)
-            SendPacket(packet.Encode());
+        {
+            var encoded = packet.Encode();
+            var isCombatResourcePacket = packet.TypeId == AAEmu.Game.Core.Packets.G2C.SCOffsets.SCCombatResourcePointPacket;
+            if (isCombatResourcePacket)
+            {
+                var wireLevel = packet.Level == 1 && EncryptionActive ? 5 : packet.Level;
+                CombatResourceLogger.Debug(
+                    "Outbound SCCombatResourcePoint 0x{0:X3}: connection {1}, account {2}, character {3} ({4}), state {5}, encryptionActive {6}, configuredLevel {7}, wireLevel {8}, frameBytes {9}; entering session send path",
+                    packet.TypeId, Id, AccountId, ActiveChar?.ObjId ?? 0, ActiveChar?.Name ?? "<none>", State,
+                    EncryptionActive, packet.Level, wireLevel, encoded.Count);
+            }
+
+            SendPacket(encoded);
+
+            if (isCombatResourcePacket)
+                CombatResourceLogger.Debug("Session send path returned for SCCombatResourcePoint 0x{0:X3}: connection {1}, character {2}; this confirms enqueue invocation, not client receipt",
+                    packet.TypeId, Id, ActiveChar?.ObjId ?? 0);
+        }
     }
 
     /// <summary>

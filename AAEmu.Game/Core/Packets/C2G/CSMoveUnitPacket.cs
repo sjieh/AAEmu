@@ -1,4 +1,7 @@
-﻿using AAEmu.Commons.Network;
+using System.Collections.Concurrent;
+using System.Numerics;
+
+using AAEmu.Commons.Network;
 using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Managers.World;
 using AAEmu.Game.Models.Game;
@@ -24,6 +27,80 @@ public class CSMoveUnitPacket() : GamePacket(CSOffsets.CSMoveUnitPacket, 1)
 
     private uint _objId;
     private MoveType _moveType;
+
+    private sealed class MountedMoveSample
+    {
+        public readonly object SyncRoot = new();
+        public Vector3 LastPosition;
+        public long LastTick;
+        public long LastWarningTick;
+        public uint LastZone;
+        public bool HasSample;
+    }
+
+    private static readonly ConcurrentDictionary<uint, MountedMoveSample> MountedMoveSamples = new();
+
+    private void LogMountedMove(
+        Character rider,
+        Mate mate,
+        UnitMoveType move,
+        uint relayZone,
+        uint oldZone,
+        uint oldAnnouncedZone,
+        Vector3 oldPosition)
+    {
+        var currentPosition = mate.Transform.World.Position;
+        var currentZone = mate.Transform.ZoneId;
+        var announcedZone = mate.ZoneAnnouncedTo;
+        var now = Environment.TickCount64;
+        var sample = MountedMoveSamples.GetOrAdd(mate.ObjId, _ => new MountedMoveSample());
+
+        lock (sample.SyncRoot)
+        {
+            var hasPrevious = sample.HasSample;
+            var dx = currentPosition.X - (hasPrevious ? sample.LastPosition.X : oldPosition.X);
+            var dy = currentPosition.Y - (hasPrevious ? sample.LastPosition.Y : oldPosition.Y);
+            var dz = currentPosition.Z - (hasPrevious ? sample.LastPosition.Z : oldPosition.Z);
+            var distance = MathF.Sqrt(dx * dx + dy * dy + dz * dz);
+            var elapsedSeconds = hasPrevious ? Math.Max(0.001, (now - sample.LastTick) / 1000.0) : 0.0;
+            var speed = hasPrevious ? distance / elapsedSeconds : 0.0;
+            var zoneChanged = hasPrevious && sample.LastZone != currentZone;
+            const float suspiciousStepMeters = 25f;
+            const double suspiciousSpeedMetersPerSecond = 35.0;
+            var suspicious = distance >= suspiciousStepMeters || speed >= suspiciousSpeedMetersPerSecond;
+            var canWarn = now - sample.LastWarningTick >= 2000;
+
+            if (suspicious && canWarn)
+            {
+                Logger.Warn(
+                    "Mounted movement jump rider={0}({1}) mate={2} template={3} relayZone={4} zone={5}->{6} announced={7}->{8} packet=({9:F1},{10:F1},{11:F1}) from=({12:F1},{13:F1},{14:F1}) to=({15:F1},{16:F1},{17:F1}) delta=({18:F1},{19:F1},{20:F1}) step={21:F1}m speed={22:F1}m/s dt={23:F3}s moveType={24} time={25} flags=0x{26:X2} actorFlags=0x{27:X2} attachedPoint={28}",
+                    rider.Name, rider.ObjId, mate.ObjId, mate.TemplateId, relayZone,
+                    oldZone, currentZone, oldAnnouncedZone, announcedZone,
+                    move.X, move.Y, move.Z,
+                    hasPrevious ? sample.LastPosition.X : oldPosition.X,
+                    hasPrevious ? sample.LastPosition.Y : oldPosition.Y,
+                    hasPrevious ? sample.LastPosition.Z : oldPosition.Z,
+                    currentPosition.X, currentPosition.Y, currentPosition.Z,
+                    dx, dy, dz, distance, speed, elapsedSeconds,
+                    move.Type, move.Time, (byte)move.Flags, move.ActorFlags, rider.AttachedPoint);
+                sample.LastWarningTick = now;
+            }
+            else if (zoneChanged || oldZone != currentZone || oldAnnouncedZone != announcedZone)
+            {
+                Logger.Info(
+                    "Mounted movement zone transition rider={0}({1}) mate={2} template={3} relayZone={4} zone={5}->{6} announced={7}->{8} packet=({9:F1},{10:F1},{11:F1}) current=({12:F1},{13:F1},{14:F1}) attachedPoint={15}",
+                    rider.Name, rider.ObjId, mate.ObjId, mate.TemplateId, relayZone,
+                    oldZone, currentZone, oldAnnouncedZone, announcedZone,
+                    move.X, move.Y, move.Z,
+                    currentPosition.X, currentPosition.Y, currentPosition.Z, rider.AttachedPoint);
+            }
+
+            sample.LastPosition = currentPosition;
+            sample.LastTick = now;
+            sample.LastZone = currentZone;
+            sample.HasSample = true;
+        }
+    }
 
     public override void Read(PacketStream stream)
     {
@@ -102,6 +179,10 @@ public class CSMoveUnitPacket() : GamePacket(CSOffsets.CSMoveUnitPacket, 1)
                     _moveType.Type, _objId, character.Name, character.ObjId);
                 return;
             }
+
+            // Capture routing state before this packet changes the mirror transform. If the mount
+            // crosses a zone seam, this tells us which zone received the movement report.
+            var relayZone = mirrorTarget.Transform?.ZoneId ?? 0;
 
             var seatedOnSlave = BoatHelmSeatRules.IsSeatedOnSlave(
                 character.AttachedPoint != AttachPointKind.None,
@@ -230,6 +311,9 @@ public class CSMoveUnitPacket() : GamePacket(CSOffsets.CSMoveUnitPacket, 1)
             }
             else if (_moveType is UnitMoveType controlledUnitMove)
             {
+                var oldPosition = mirrorTarget.Transform.World.Position;
+                var oldZone = mirrorTarget.Transform.ZoneId;
+                var oldAnnouncedZone = mirrorTarget is Mate oldMate ? oldMate.ZoneAnnouncedTo : 0;
                 RemoveEffects(mirrorTarget, _moveType);
                 mirrorTarget.Transform.Local.SetPosition(
                     controlledUnitMove.X, controlledUnitMove.Y, controlledUnitMove.Z,
@@ -237,6 +321,13 @@ public class CSMoveUnitPacket() : GamePacket(CSOffsets.CSMoveUnitPacket, 1)
                     (float)MathUtil.ConvertDirectionToRadian(controlledUnitMove.RotationY),
                     (float)MathUtil.ConvertDirectionToRadian(controlledUnitMove.RotationZ));
                 mirrorTarget.Transform.FinalizeTransform();
+
+                if (mirrorTarget is Mate movedMate)
+                {
+                    LogMountedMove(
+                        character, movedMate, controlledUnitMove, relayZone,
+                        oldZone, oldAnnouncedZone, oldPosition);
+                }
 
                 // Same gap as for the character above: the zone never streams this back, so without a
                 // broadcast a ridden mount would stand still for everybody else. Mirrors what the

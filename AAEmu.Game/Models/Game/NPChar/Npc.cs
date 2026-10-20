@@ -1095,9 +1095,13 @@ public partial class Npc : Unit
 
         // Logger.Warn($"Eligible killers count is {eligiblePlayers.Count }");
 
-        if (eligiblePlayers.Count == 0 && killer is Character characterKiller)
+        // A player-operated device can be the direct killer even when no tagger was recorded
+        // before a one-hit kill. Resolve its owner/driver as the fallback so quest kills and
+        // rewards still reach the character who operated it.
+        var characterKiller = killer as Character ?? killer.GetOwnerCharacter();
+        if (eligiblePlayers.Count == 0 && characterKiller != null)
         {
-            QuestManager.Instance.DoOnMonsterHuntEvents(characterKiller, this); // No eligible owner, but the killer is a character.
+            QuestManager.Instance.DoOnMonsterHuntEvents(characterKiller, this); // No eligible tagger; credit the killer or its owner.
             characterKiller.AddExp(KillExp, true);
             AwardNpcHonor(characterKiller);
             var mateList = characterKiller.ParentWorld.MateManager.GetActiveMates(characterKiller.Id);

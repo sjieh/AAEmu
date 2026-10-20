@@ -28,11 +28,14 @@ using AAEmu.Game.Models.StaticValues;
 using AAEmu.Game.Models.Tasks.Skills;
 using AAEmu.Game.Utils;
 using static AAEmu.Game.Models.Game.Units.Buffs;
+using NLog;
 
 namespace AAEmu.Game.Models.Game.Units;
 
 public class Unit : BaseUnit, IUnit
 {
+    private static readonly Logger CombatResourceLogger = LogManager.GetLogger("CombatResource");
+
     public virtual UnitTypeFlag TypeFlag { get => UnitTypeFlag.None; }
     public virtual BaseUnitType BaseUnitType { get; set; } = BaseUnitType.Invalid;
 
@@ -722,6 +725,8 @@ public class Unit : BaseUnit, IUnit
 
         var shouldHold = resource.ShouldHoldBuff(amount);
         var holds = Buffs.CheckBuff(resource.BuffId);
+        CombatResourceLogger.Debug("Resource buff check: unit {0}, resourceId {1}, point {2}, buffId {3}, condition {4}, shouldHold {5}, alreadyHolds {6}",
+            ObjId, combatResourceId, amount, resource.BuffId, resource.BuffCondition, shouldHold, holds);
         if (shouldHold == holds)
             return;
 
@@ -767,8 +772,9 @@ public class Unit : BaseUnit, IUnit
         CombatResourcePointLog?.Add((resource.Id, amount));
 
         var packet = new SCCombatResourcePointPacket(ObjId, resource.Id, (ulong)Math.Max(0, amount), updateTimeMs);
-        Logger.Debug("Send combat resource point: unit {0}, resource {1}, amount {2}, audience {3}",
-            ObjId, resource.Id, amount, resource.SendTypeId == 2 ? "Broadcast" : "Self");
+        CombatResourceLogger.Debug("Send SCCombatResourcePoint 0x{0:X3}: unit {1}, resourceId {2}, point {3}, updateTime {4}, audience {5}",
+            AAEmu.Game.Core.Packets.G2C.SCOffsets.SCCombatResourcePointPacket,
+            ObjId, resource.Id, amount, updateTimeMs, resource.SendTypeId == 2 ? "Broadcast" : "Self");
         if (resource.SendTypeId == 2)
             BroadcastPacket(packet, true);
         else
@@ -789,7 +795,7 @@ public class Unit : BaseUnit, IUnit
                 (int)character.Ability1, (int)character.Ability2, (int)character.Ability3);
             resources = resources.Where(resource => owned.Contains(resource.Id));
             sendZeroes = true;
-            Logger.Debug("Sending combat resource snapshot for {0}: abilities {1}/{2}/{3}, resources {4}",
+            CombatResourceLogger.Debug("Sending combat resource snapshot for {0}: abilities {1}/{2}/{3}, resources {4}",
                 character.Name, character.Ability1, character.Ability2, character.Ability3,
                 string.Join(",", owned.OrderBy(id => id)));
         }

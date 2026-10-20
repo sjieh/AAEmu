@@ -15,6 +15,7 @@ using AAEmu.Game.Models.Game.Faction;
 using AAEmu.Game.Models.Game.Items;
 using AAEmu.Game.Models.Game.Items.Actions;
 using AAEmu.Game.Models.Game.Items.Templates;
+using AAEmu.Game.Models.Game.Music;
 using AAEmu.Game.Models.Game.NPChar;
 using AAEmu.Game.Models.Game.Skills.Effects;
 using AAEmu.Game.Models.Game.Skills.Effects.Enums;
@@ -120,6 +121,10 @@ public class Skill
     private BaseUnit _activeTarget;
     private SkillCastTarget _activeTargetCaster;
     private SkillObject _activeSkillObject;
+    private BaseUnit _activeCastAimAnchor;
+    private BaseUnit _channelingCastAimAnchor;
+    private readonly object _deferredClientEndLock = new();
+    private bool _deferredClientEnd;
     private SkillCaster _zoneSkillCaster;
     private bool _cancelled;
     internal event Action<Skill> CancellationRequested;
@@ -193,7 +198,7 @@ public class Skill
         Id = template.Id;
         Template = template;
         if (owner != null)
-            Level = template.LevelStep > 0 ? (byte)((owner.GetAbLevel(template.AbilityId) - template.AbilityLevel) / template.LevelStep + 1) : (byte)1;
+            Level = SkillRankRules.ForUnit(template, owner);
         else
             Level = 1;
     }
@@ -381,8 +386,11 @@ public class Skill
             }
         }
 
-        // Cancel buffs if Template asks for it
-        if (Template.CancelOngoingBuffs)
+        var isPerformanceMaintenanceSkill = SongcraftPerformanceManager.IsPerformanceMaintenanceSkill(Template.Id);
+
+        // The plot-only rhythm helper is a periodic maintenance action, not a player cast. Letting
+        // its generic cancellation run ends the performance buffs that drive its own 15 s lifetime.
+        if (Template.CancelOngoingBuffs && !isPerformanceMaintenanceSkill)
         {
             if (caster is Units.Mate)
                 caster.Buffs.TriggerRemoveOn(Buffs.BuffRemoveOn.UseSkill, Template.CancelOngoingBuffExceptionTagId);
@@ -401,6 +409,7 @@ public class Skill
 
         // Create a new skillObject if needed
         skillObject ??= new SkillObject();
+        _activeSkillObject = skillObject;
 
         // Grab current target
         var target = GetInitialTarget(caster, casterCaster, targetCaster);
@@ -430,6 +439,10 @@ public class Skill
         // skill_reqs: a buff or buff tag on the caster or on the target that forbids or requires the cast
         // (rooted/stunned/fear "cannot use while X", gliding "only while X"). Checked once the target is
         // resolved, because 91 of the 338 rows read the target.
+        // Skills granted by Juggernaut remain usable while its form buff is active, despite the shared
+        // transformation blocker tag carried by the granted skills.
+        var isActiveJuggernautFormGrant =
+            DwarfTransformationLearnRules.IsActiveJuggernautFormGrant(caster, Template.Id);
         if (!SkillRequirementRules.AllowsCast(
                 SkillManager.Instance.GetSkillRequirements(Template.Id),
                 requirement => requirement.BuffId > 0 &&
@@ -439,7 +452,9 @@ public class Skill
                                (requirement.OnTarget ? target.Buffs.CheckBuffTag(requirement.BuffTagId)
                                    : caster.Buffs.CheckBuffTag(requirement.BuffTagId)),
                 out var requirementMessage,
-                out var failedRequirementId))
+                out var failedRequirementId,
+                ignoreRequirement: requirement => isActiveJuggernautFormGrant &&
+                    DwarfTransformationLearnRules.IsJuggernautFormCastBlocker(requirement)))
         {
             Logger.Trace("Skill {0} blocked by a skill_reqs row for {1}: {2} (req={3})",
                 Template.Id, caster.Name, requirementMessage, failedRequirementId);
@@ -594,6 +609,22 @@ public class Skill
             return rangeFailure.Value;
         }
 
+        // Movement packets keep the server's live yaw aligned with travel, while the client aims at the
+        // selected target for an ability press. Preserve that cast-time pose separately so cone skills
+        // resolve where the player aimed even when they are moving sideways or backwards.
+        var hasDirectionalArea = Template.Plot != null ||
+                                 SkillAreaRules.ConeHalfAngle(Template.TargetAreaAngle, Template.FrontAngle) > 0d;
+        var castFacingYawDegrees = hasDirectionalArea && caster is Character &&
+                                   targetCaster.Type == SkillCastTargetType.Unit &&
+                                   target is Unit targetUnit &&
+                                   targetUnit.ObjId != caster.ObjId
+            ? MathUtil.CalculateAngleFrom(caster.Transform.World.Position, targetUnit.Transform.World.Position) - 90.0
+            : (double?)null;
+        var castAimAnchor = castFacingYawDegrees.HasValue
+            ? PlotState.CreateCasterCastStartAnchor(caster, castFacingYawDegrees)
+            : null;
+        _activeCastAimAnchor = castAimAnchor;
+
         // A validated new cast closes the previous combo window. Its own Combo effect will open the
         // next window when the skill or plot actually applies that effect.
         character?.Skills.ClearComboFollowUps();
@@ -633,11 +664,15 @@ public class Skill
                 // family) already drive the cast bar from SCPlotEvent. SkillStarted with a
                 // 1 s RealCastTime locks the whole hotbar, and plot-only never EndSkill's, so
                 // hold-to-repeat dies on the first press.
-                Task.Run(() => Template.Plot.RunAsync(caster, casterCaster, target, targetCaster, skillObject, this, plotTlId));
+                if (!isPerformanceMaintenanceSkill)
+                    SongcraftPerformanceManager.EndActiveClientAnimation(unit);
+                Task.Run(() => Template.Plot.RunAsync(caster, casterCaster, target, targetCaster, skillObject, this,
+                    plotTlId, castAimAnchor));
                 return SkillResult.Success;
             }
 
-            Task.Run(() => Template.Plot.RunAsync(caster, casterCaster, target, targetCaster, skillObject, this, plotTlId));
+            Task.Run(() => Template.Plot.RunAsync(caster, casterCaster, target, targetCaster, skillObject, this,
+                plotTlId, castAimAnchor));
         }
 
         if (character is { AccessLevel: < 100 })
@@ -689,6 +724,11 @@ public class Skill
             }
         }
 
+        // A new valid cast takes over the character's Songcraft performance animation. The
+        // performance buff remains active through its maintenance ticks until it expires.
+        if (!isPerformanceMaintenanceSkill)
+            SongcraftPerformanceManager.EndActiveClientAnimation(unit);
+
         // Calculate casting time if needed
         var castTime = 0;
         if (Template.CastingTime > 0)
@@ -723,7 +763,8 @@ public class Skill
                 RealCastTimeDiv10 = (ushort)(castTime / 10), // calculate with adjustments
             }, true);
 
-            unit.SkillTask = new CastTask(this, caster, casterCaster, target, targetCaster, skillObject);
+            unit.SkillTask = new CastTask(this, caster, casterCaster, target, targetCaster, skillObject,
+                castAimAnchor);
             _activeCasterCaster = casterCaster;
             _activeTarget = target;
             _activeTargetCaster = targetCaster;
@@ -1145,7 +1186,8 @@ public class Skill
         return positionUnit;
     }
 
-    public void Cast(BaseUnit caster, SkillCaster casterCaster, BaseUnit target, SkillCastTarget targetCaster, SkillObject skillObject)
+    public void Cast(BaseUnit caster, SkillCaster casterCaster, BaseUnit target, SkillCastTarget targetCaster,
+        SkillObject skillObject, BaseUnit castAimAnchor = null)
     {
         if (caster is not Unit unit) { return; }
         if (Cancelled)
@@ -1225,7 +1267,7 @@ public class Skill
             return;
         }
 
-        if (IsPureUnsupportedCast())
+        if (IsPureUnsupportedCast(skillObject))
         {
             Logger.Debug("Skill {0}: every effect is an unsupported special effect, mana and cooldown not charged", Template.Id);
         }
@@ -1316,11 +1358,11 @@ public class Skill
 
         if (Template.ChannelingTime > 0)
         {
-            StartChanneling(caster, casterCaster, target, targetCaster, skillObject);
+            StartChanneling(caster, casterCaster, target, targetCaster, skillObject, castAimAnchor);
         }
         else
         {
-            ScheduleEffects(caster, casterCaster, target, targetCaster, skillObject);
+            ScheduleEffects(caster, casterCaster, target, targetCaster, skillObject, castAimAnchor);
         }
     }
 
@@ -1347,9 +1389,11 @@ public class Skill
         TlId = 0;
     }
 
-    public void StartChanneling(BaseUnit caster, SkillCaster casterCaster, BaseUnit target, SkillCastTarget targetCaster, SkillObject skillObject)
+    public void StartChanneling(BaseUnit caster, SkillCaster casterCaster, BaseUnit target, SkillCastTarget targetCaster,
+        SkillObject skillObject, BaseUnit castAimAnchor = null)
     {
         if (caster is not Unit unit) { return; }
+        _channelingCastAimAnchor = castAimAnchor;
         if (Template.ChannelingBuffId != 0)
         {
             var buff = SkillManager.Instance.GetBuffTemplate(Template.ChannelingBuffId);
@@ -1427,7 +1471,8 @@ public class Skill
             // calls EndSkill itself (directly, or from the ApplySkillTask it schedules). Calling
             // EndSkill here as well would release the TlId twice and end the skill twice. This is the
             // call EndChannelingTask carried commented out.
-            ScheduleEffects(caster, casterCaster, channelTarget, channelTargetCaster, channelSkillObject);
+            ScheduleEffects(caster, casterCaster, channelTarget, channelTargetCaster, channelSkillObject,
+                _channelingCastAimAnchor);
         }
         else
         {
@@ -1453,7 +1498,8 @@ public class Skill
         _channelingTickTask = null;
     }
 
-    public void ScheduleEffects(BaseUnit caster, SkillCaster casterCaster, BaseUnit target, SkillCastTarget targetCaster, SkillObject skillObject)
+    public void ScheduleEffects(BaseUnit caster, SkillCaster casterCaster, BaseUnit target, SkillCastTarget targetCaster,
+        SkillObject skillObject, BaseUnit castAimAnchor = null)
     {
         if (caster is not Unit unit) { return; }
         if (Cancelled)
@@ -1514,12 +1560,13 @@ public class Skill
 
         if (totalDelay > 0)
         {
-            var thisSkillTask = new ApplySkillTask(this, caster, casterCaster, target, targetCaster, skillObject);
+            var thisSkillTask = new ApplySkillTask(this, caster, casterCaster, target, targetCaster, skillObject,
+                castAimAnchor);
             TaskManager.Instance.Schedule(thisSkillTask, TimeSpan.FromMilliseconds(totalDelay));
         }
         else
         {
-            ApplyEffects(caster, casterCaster, target, targetCaster, skillObject);
+            ApplyEffects(caster, casterCaster, target, targetCaster, skillObject, castAimAnchor);
             EndCastUnlessPlotOwnsIt(caster);
         }
     }
@@ -1601,10 +1648,11 @@ public class Skill
             : 0;
     }
 
-    private IEnumerable<BaseUnit> FilterAoeUnits(BaseUnit caster, BaseUnit targetSelf, IEnumerable<BaseUnit> units)
+    private IEnumerable<BaseUnit> FilterAoeUnits(BaseUnit caster, BaseUnit targetSelf, IEnumerable<BaseUnit> units,
+        BaseUnit castAimAnchor)
     {
         units = SkillTargetingUtil.FilterWithRelation(Template.TargetRelation, caster, units);
-        return FilterAoeShape(caster, targetSelf, units);
+        return FilterAoeShape(caster, targetSelf, units, castAimAnchor);
     }
 
     /// <summary>
@@ -1612,17 +1660,23 @@ public class Skill
     /// <c>front_angle</c> cone, and the corridor a <c>Line</c> selection describes. See
     /// <see cref="SkillAreaRules"/> for the readings and their open questions.
     /// </summary>
-    private IEnumerable<BaseUnit> FilterAoeShape(BaseUnit caster, BaseUnit targetSelf, IEnumerable<BaseUnit> units)
+    private IEnumerable<BaseUnit> FilterAoeShape(BaseUnit caster, BaseUnit targetSelf, IEnumerable<BaseUnit> units,
+        BaseUnit castAimAnchor)
     {
         var list = units as List<BaseUnit> ?? units.ToList();
 
         var halfAngle = SkillAreaRules.ConeHalfAngle(Template.TargetAreaAngle, Template.FrontAngle);
         if (halfAngle > 0d)
         {
-            // The bearing is measured from the caster's facing, so a cleave leaves out what is behind it.
+            // Prefer the cast's target-derived aim when the caster is a player. Movement keeps updating
+            // the live transform's yaw, so using it here can turn a targeted cleave away from its target.
             list = list.Where(unit =>
                 unit != null &&
-                (unit.ObjId == caster.ObjId || SkillAreaRules.IsInsideCone(MathUtil.CalculateAngleFrom(caster, unit), halfAngle)))
+                (unit.ObjId == caster.ObjId || SkillAreaRules.IsInsideCone(
+                    castAimAnchor != null
+                        ? MathUtil.CalculateAngleFrom(castAimAnchor, unit)
+                        : MathUtil.CalculateAngleFrom(caster, unit),
+                    halfAngle)))
                 .ToList();
         }
 
@@ -1654,8 +1708,13 @@ public class Skill
     /// a special type that is implemented - the normal consumption path runs, so this cannot be used
     /// to farm an effect for free.
     /// </remarks>
-    private static bool IsPureNoOpCast(List<(BaseUnit target, SkillEffect effect)> effectsToApply)
+    private static bool IsPureNoOpCast(
+        List<(BaseUnit target, SkillEffect effect)> effectsToApply,
+        bool hasServerOwnedCastAction = false)
     {
+        if (hasServerOwnedCastAction)
+            return false;
+
         var sawSpecial = false;
 
         foreach (var (_, effect) in effectsToApply)
@@ -1679,24 +1738,53 @@ public class Skill
     /// the way the item branch above already skips reagents. Read from the template rather than the
     /// resolved list because mana and cooldown are charged before the effects are gathered.
     /// </summary>
-    private bool IsPureUnsupportedCast()
+    private bool IsPureUnsupportedCast(SkillObject skillObject = null)
     {
+        if (DwarfTransformationLearnRules.IsLearnCast(Template?.Id ?? 0, skillObject ?? _activeSkillObject))
+            return false;
+
         _pureUnsupportedCast ??= SpecialEffectOwnershipRules.IsPureUnsupportedCast(
             (Template?.Effects ?? []).Select(effect => (effect.Template as SpecialEffect)?.SpecialEffectTypeId));
         return _pureUnsupportedCast.Value;
     }
 
-    public void ApplyEffects(BaseUnit caster, SkillCaster casterCaster, BaseUnit targetSelf, SkillCastTarget targetCaster, SkillObject skillObject)
+    public void ApplyEffects(BaseUnit caster, SkillCaster casterCaster, BaseUnit targetSelf, SkillCastTarget targetCaster,
+        SkillObject skillObject, BaseUnit castAimAnchor = null)
     {
         using var inventoryEffect = (caster as Character)?.Inventory?.EnterSkillEffect();
-        ApplyEffectsCore(caster, casterCaster, targetSelf, targetCaster, skillObject);
+        ApplyEffectsCore(caster, casterCaster, targetSelf, targetCaster, skillObject, castAimAnchor);
     }
 
-    private void ApplyEffectsCore(BaseUnit caster, SkillCaster casterCaster, BaseUnit targetSelf, SkillCastTarget targetCaster, SkillObject skillObject)
+    private void ApplyEffectsCore(BaseUnit caster, SkillCaster casterCaster, BaseUnit targetSelf, SkillCastTarget targetCaster,
+        SkillObject skillObject, BaseUnit castAimAnchor)
     {
         if (caster is not Unit unit)
             return;
         var player = caster as Character;
+        var isDwarfLearnCast = DwarfTransformationLearnRules.IsLearnCast(Template.Id, skillObject);
+        if (isDwarfLearnCast)
+        {
+            if (player == null || !player.Skills.CanLearnSkillWithoutLearnItemCost(
+                    DwarfTransformationLearnRules.SummonJuggernautSkillId))
+            {
+                Cancelled = true;
+                Logger.Warn("Dwarf Learn Transformation cancelled for {0}: skill {1} is no longer learnable",
+                    player?.Name ?? caster.Name, DwarfTransformationLearnRules.SummonJuggernautSkillId);
+                return;
+            }
+
+            // The cast's enabled skill_effects row owns the Garden Gem cost. Require that row so a
+            // missing or disabled cost can never turn this client action into a free skill grant.
+            if (!Template.Effects.Any(effect =>
+                    effect.ConsumeItemId > 0 && effect.ConsumeItemCount > 0 && !effect.ConsumeSourceItem))
+            {
+                Cancelled = true;
+                Logger.Error("Dwarf Learn Transformation cancelled: skill {0} has no consumable item effect",
+                    Template.Id);
+                return;
+            }
+        }
+
         var possibleTargets = new List<BaseUnit>(); // TODO crutches
         // Get a list of all possible targets
         // 10.0.2.13: skills.target_siege removed; the former ship-skill hack (TargetSiege + Source + Slave) no
@@ -1707,7 +1795,7 @@ public class Skill
             var units = WorldManager.GetAround<BaseUnit>(targetSelf, areaRadius, true);
             if (Template.TargetSelection == SkillTargetSelection.Source)
                 units.Add(targetSelf); // Add main target as well
-            units = FilterAoeUnits(caster, targetSelf, units).ToList();
+            units = FilterAoeUnits(caster, targetSelf, units, castAimAnchor).ToList();
 
             possibleTargets.AddRange(units);
             // TODO : Need to check if this is needed
@@ -2007,7 +2095,8 @@ public class Skill
         // Using only lastAppliedEffect breaks multi-effect skills: farmer's pouch (23136) applies
         // GainLootPack (consume_source_item=t) then a conditional BuffEffect (consume=f). With a
         // life-skill buff active the buff is last → loot granted, purse never removed.
-        if (effectsToApply.Count > 0 && player != null && !IsPureNoOpCast(effectsToApply))
+        if ((effectsToApply.Count > 0 || isDwarfLearnCast) && player != null &&
+            !IsPureNoOpCast(effectsToApply, isDwarfLearnCast))
         {
             var consumeSource = false;
             var sourceConsumeCount = 0;
@@ -2065,8 +2154,11 @@ public class Skill
                 }
             }
 
+            IEnumerable<SkillEffect> itemCostEffects = isDwarfLearnCast
+                ? Template.Effects
+                : effectsToApply.Select(entry => entry.effect);
             if (!TryQueueEffectItemConsumption(
-                    effectsToApply.Select(entry => entry.effect),
+                    itemCostEffects,
                     itemId => checked(
                         player.Inventory.GetItemsCount(SlotType.Inventory, itemId) +
                         player.Inventory.GetItemsCount(SlotType.Equipment, itemId)),
@@ -2222,6 +2314,22 @@ public class Skill
                 foreach (var (templateId, amount) in consumedItemTemplates)
                     player.Inventory.ConsumeItem(null, ItemTaskType.SkillEffectConsumption, templateId,
                         amount, null);
+
+                if (isDwarfLearnCast)
+                {
+                    if (player.Skills.AddSkillWithoutLearnItemCost(
+                            DwarfTransformationLearnRules.SummonJuggernautSkillId))
+                    {
+                        player.Skills.GrantDwarfRacialSkills(notify: true);
+                        Logger.Info("Dwarf Learn Transformation completed for {0}: learned skill {1}",
+                            player.Name, DwarfTransformationLearnRules.SummonJuggernautSkillId);
+                    }
+                    else
+                    {
+                        Logger.Error("Dwarf Learn Transformation consumed its cast cost but failed to learn skill {0} for {1}",
+                            DwarfTransformationLearnRules.SummonJuggernautSkillId, player.Name);
+                    }
+                }
             }
         }
     }
@@ -2372,6 +2480,13 @@ public class Skill
         if (caster is not Unit unit)
             return;
 
+        var deferClientEnd = SongcraftPerformanceManager.ShouldDeferClientEnd(this);
+        if (deferClientEnd)
+        {
+            lock (_deferredClientEndLock)
+                _deferredClientEnd = TlId != 0;
+        }
+
         if (caster is Character character)
         {
             if (!IsPureUnsupportedCast())
@@ -2389,14 +2504,57 @@ public class Skill
         unit.OnSkillEnd(this);
         // Basic attacks (2/3/4): while auto-attacking, skip SCSkillEnded so a Started/Fired
         // swing doesn't immediately clear client combat UI. Stop clears via SCSkillStopped.
-        if (Template.Id is not (2 or 3 or 4) || caster is not Character { IsAutoAttack: true })
+        if (!deferClientEnd && (Template.Id is not (2 or 3 or 4) || caster is not Character { IsAutoAttack: true }))
             caster.BroadcastPacket(new SCSkillEndedPacket(TlId), true);
-        RelayZoneSkillEndedIfNeeded();
-        SkillTlIdManager.ReleaseId(TlId);
-        TlId = 0;
+        if (!deferClientEnd)
+            RelayZoneSkillEndedIfNeeded();
+        if (!deferClientEnd)
+        {
+            SkillTlIdManager.ReleaseId(TlId);
+            TlId = 0;
+        }
 
         if (caster is Character character1 && character1.IgnoreSkillCooldowns)
             character1.ResetSkillCooldown(Template.Id, false);
+    }
+
+    /// <summary>
+    /// Closes the client animation once the performance buff ends or another cast takes over.
+    /// Server-side effects, cooldowns, and skill-end callbacks have already run in EndSkill.
+    /// </summary>
+    internal void CompleteDeferredClientEnd(Character caster)
+    {
+        if (caster == null)
+            return;
+
+        ushort tlId;
+        lock (_deferredClientEndLock)
+        {
+            if (!_deferredClientEnd || TlId == 0)
+                return;
+
+            _deferredClientEnd = false;
+            tlId = TlId;
+            TlId = 0;
+        }
+
+        try
+        {
+            caster.BroadcastPacket(new SCSkillEndedPacket(tlId), true);
+        }
+        finally
+        {
+            try
+            {
+                // Keep the zone's timeline open for the same duration as the client's. Passing the
+                // captured id lets us release TlId before relaying without reopening a race.
+                RelayZoneSkillEndedIfNeeded(tlId);
+            }
+            finally
+            {
+                SkillTlIdManager.ReleaseId(tlId);
+            }
+        }
     }
 
     public int GetLaborCost(Character character)
@@ -2524,7 +2682,7 @@ public class Skill
 
         running.Cancel();
         victim.SkillTask = new CastTask(this, victim, _activeCasterCaster, _activeTarget, _activeTargetCaster,
-            _activeSkillObject);
+            _activeSkillObject, _activeCastAimAnchor);
         TaskManager.Instance.Schedule(victim.SkillTask, TimeSpan.FromMilliseconds(delayMilliseconds));
     }
 
@@ -2850,14 +3008,16 @@ public class Skill
     /// <summary>
     /// Plot-only skills call this directly because they do not use <see cref="EndSkill"/>.
     /// </summary>
-    public void RelayZoneSkillEndedIfNeeded()
+    public void RelayZoneSkillEndedIfNeeded(ushort? timelineId = null)
     {
-        if (!_zoneSkillStartedRelayed || _zoneSkillEndedRelayed || TlId == 0 || _zoneSkillCaster == null)
+        var relayTimelineId = timelineId ?? TlId;
+        if (!_zoneSkillStartedRelayed || _zoneSkillEndedRelayed || relayTimelineId == 0 ||
+            _zoneSkillCaster == null)
             return;
         if (!WorldIntegration.ZoneAuthority || WorldIntegration.RelaySkillEndedToZone == null)
             return;
 
-        _zoneSkillEndedRelayed = WorldIntegration.RelaySkillEndedToZone(TlId, _zoneSkillCaster);
+        _zoneSkillEndedRelayed = WorldIntegration.RelaySkillEndedToZone(relayTimelineId, _zoneSkillCaster);
     }
 
     /// <summary>

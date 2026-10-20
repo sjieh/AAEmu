@@ -30,8 +30,10 @@ public class KnockBack : SpecialEffectAction
         if (target is not Unit trg || trg.Hp <= 0)
             return;
 
-        // value1 = distance (meters when small; mm when large — same heuristic as leap/teleport SE).
-        var distance = value1 > 100 ? value1 / 1000f : value1;
+        // KnockBack values use millimeters throughout the database, including small values.
+        // Treating values <= 100 as meters made a 100-unit knockback move a target 100 meters.
+        const float MillimetersPerMeter = 1000f;
+        var distance = value1 / MillimetersPerMeter;
         if (distance <= 0f)
             distance = 1f;
 
@@ -51,7 +53,7 @@ public class KnockBack : SpecialEffectAction
 
         var nx = dx / len;
         var ny = dy / len;
-        var zLift = value3 > 100 ? value3 / 1000f : value3;
+        var zLift = value3 / MillimetersPerMeter;
         var destX = to.X + nx * distance;
         var destY = to.Y + ny * distance;
         var destZ = to.Z + MathF.Max(0f, zLift);
@@ -82,5 +84,18 @@ public class KnockBack : SpecialEffectAction
 
         if (WorldIntegration.ZoneAuthority)
             WorldIntegration.RelayKnockBackToZone?.Invoke(trg.ObjId, destX, destY, destZ);
+
+        if (trg is Character)
+        {
+            var final = trg.Transform.World.Position;
+            Logger.Info(
+                "Knockback result skill={0} caster={1}({2}/{3}) target={4}({5}) zone={6} raw=({7},{8},{9},{10}) distance={11:F3}m zLift={12:F3}m from=({13:F1},{14:F1},{15:F1}) targetBefore=({16:F1},{17:F1},{18:F1}) destination=({19:F1},{20:F1},{21:F1}) targetAfter=({22:F1},{23:F1},{24:F1}) parented={25} zoneAuthority={26}",
+                skill.Id, caster.Name, caster.ObjId, caster.GetType().Name,
+                trg.Name, trg.ObjId, trg.Transform.ZoneId,
+                value1, value2, value3, value4, distance, zLift,
+                from.X, from.Y, from.Z, to.X, to.Y, to.Z,
+                destX, destY, destZ, final.X, final.Y, final.Z,
+                trg.Transform.Parent != null, WorldIntegration.ZoneAuthority);
+        }
     }
 }

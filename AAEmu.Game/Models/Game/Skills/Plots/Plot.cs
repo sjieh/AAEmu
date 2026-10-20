@@ -226,7 +226,7 @@ public class Plot
     private readonly record struct ManaCostVisitKey(uint EventId, uint SourceId, uint TargetId);
 
     public async Task RunAsync(BaseUnit caster, SkillCaster casterCaster, BaseUnit target, SkillCastTarget targetCaster,
-        SkillObject skillObject, Skill skill, ushort castTlId)
+        SkillObject skillObject, Skill skill, ushort castTlId, BaseUnit casterCastStartAnchor = null)
     {
         if (caster is not Unit casterUnit)
             return;
@@ -262,7 +262,8 @@ public class Plot
                 prev.RequestCancellation();
         }
 
-        var state = new PlotState(caster, casterCaster, target, targetCaster, skillObject, skill, castTlId);
+        var state = new PlotState(caster, casterCaster, target, targetCaster, skillObject, skill, castTlId,
+            casterCastStartAnchor);
         casterUnit.ActivePlotState = state;
         skill.ActivePlotState = state;
 

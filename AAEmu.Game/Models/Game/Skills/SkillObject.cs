@@ -122,6 +122,14 @@ public class SkillObject : PacketMarshaler
     }
 }
 
+/// <summary>
+/// Internal marker for the Dwarf Learn Transformation cast. Its client flag is not a wire
+/// SkillObjectType, so this marker serializes as the normal None value.
+/// </summary>
+public sealed class SkillObjectDwarfTransformationLearn : SkillObject
+{
+}
+
 public class SkillObjectUnk1 : SkillObject
 {
     public byte Type { get; set; }

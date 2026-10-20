@@ -1536,6 +1536,14 @@ public class Slave : Unit
     public override Character GetOwnerCharacter()
     {
         var ownerObject = Summoner ?? (OwnerObjId > 0 ? ParentWorld.GetGameObject(OwnerObjId) as BaseUnit : null);
-        return ownerObject?.GetOwnerCharacter();
+        var ownerCharacter = ownerObject?.GetOwnerCharacter();
+        if (ownerCharacter != null)
+            return ownerCharacter;
+
+        // World-spawned devices such as quest cannons have no summoner. When a character operates
+        // one from its driver seat, attribute its combat and quest credit to that character.
+        return AttachedCharacters.TryGetValue(AttachPointKind.Driver, out var driver)
+            ? driver?.GetOwnerCharacter()
+            : null;
     }
 }

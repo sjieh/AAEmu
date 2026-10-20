@@ -416,6 +416,7 @@ public class NpcManager(
             Id = templateId,
             Template = template,
             ModelId = template.ModelId,
+            HeirLevel = template.HeirLevel,
             CanFly = spawnFlags.CanFly,
             IsSwimmer = spawnFlags.IsSwimmer,
             Faction = factionManager.GetFaction(template.FactionId),
@@ -853,6 +854,7 @@ public class NpcManager(
                             NpcKindId = (NpcKindType)reader.GetByte("npc_kind_id"),
                             // 10.0.2.13: npcs.level can exceed 255 (e.g. 5055); clamp into the byte field to avoid OverflowException
                             Level = (byte)Math.Clamp(reader.GetInt32("level"), 0, 255),
+                            HeirLevel = reader.GetByte("heir_level", 0),
                             NpcTemplateId = (NpcTemplateType)reader.GetByte("npc_template_id"),
                             ModelId = reader.GetUInt32("model_id"),
                             FactionId = (FactionsEnum)reader.GetUInt32("faction_id"),

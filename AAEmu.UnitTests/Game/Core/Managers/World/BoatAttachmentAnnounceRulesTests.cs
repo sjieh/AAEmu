@@ -87,7 +87,11 @@ public class BoatAttachmentAnnounceRulesTests
         WorldIntegration.ZoneAuthority = true;
         var created = new List<uint>();
         var attached = new List<(uint Zone, uint Child, uint Hull, byte Point)>();
-        WorldIntegration.RelayUnitStateToZone = (_, objId, _) => created.Add(objId);
+        WorldIntegration.RelayUnitStateToZone = (_, objId, _) =>
+        {
+            created.Add(objId);
+            return true;
+        };
         WorldIntegration.RelayUnitAttachToZoneId = (zone, child, hull, point, on) =>
         {
             if (on)

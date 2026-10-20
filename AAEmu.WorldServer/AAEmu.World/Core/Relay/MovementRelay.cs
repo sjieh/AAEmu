@@ -43,6 +43,9 @@ public class MovementRelay
     /// <summary>bcId → how many hull position applications have been logged, to keep the trace short.</summary>
     private static readonly ConcurrentDictionary<uint, int> HullSyncLogged = new();
 
+    /// <summary>Per source/owner pair counts so repeated stale mate streams are logged sparingly.</summary>
+    private static readonly ConcurrentDictionary<(uint BcId, uint SourceZone, uint OwnerZone), int> StaleMateMoveDrops = new();
+
     /// <summary>bcId → template of a CanFly mirror; 0 marks a known non-flier so we look up once.</summary>
     private static readonly ConcurrentDictionary<uint, uint> FlierTemplates = new();
     private static readonly ConcurrentDictionary<uint, float> LastFlierZ = new();
@@ -284,6 +287,40 @@ public class MovementRelay
 
         return ZoneMoveOwnershipRules.IsOwnedBy(
             source.ZoneId, source.InstanceId, unit.Transform.ZoneId, unit.Transform.InstanceId);
+    }
+
+    private static uint GetMovementOwnerZone(BaseUnit unit)
+    {
+        // A mate's ZoneAnnouncedTo tracks the zone that actually has its mirror. Transform.ZoneId
+        // can move ahead while a destination handoff is being queued or retried.
+        if (unit is Mate mate && mate.ZoneAnnouncedTo != 0)
+            return mate.ZoneAnnouncedTo;
+
+        return unit.Transform?.ZoneId ?? 0;
+    }
+
+    private static bool DropStaleMateMovement(Mate mate, UnitMoveType move, ZoneConnection source)
+    {
+        if (source == null)
+            return false;
+
+        var ownerZone = GetMovementOwnerZone(mate);
+        if (ownerZone == 0 || source.ZoneId == ownerZone)
+            return false;
+
+        var key = (mate.ObjId, source.ZoneId, ownerZone);
+        var count = StaleMateMoveDrops.AddOrUpdate(key, 1, (_, prior) => prior + 1);
+        if (count == 1 || count % 100 == 0)
+        {
+            var position = mate.Transform.World.Position;
+            Logger.Warn(
+                "Dropped stale mate movement bcId={0} owner={1} sourceZone={2} ownerZone={3} transformZone={4} announcedZone={5} count={6} incoming=({7:F1},{8:F1},{9:F1}) current=({10:F1},{11:F1},{12:F1})",
+                mate.ObjId, mate.OwnerObjId, source.ZoneId, ownerZone, mate.Transform.ZoneId,
+                mate.ZoneAnnouncedTo, count, move.X, move.Y, move.Z,
+                position.X, position.Y, position.Z);
+        }
+
+        return true;
     }
 
     private static void ApplyCombatUnitPosition(uint bcId, UnitMoveType move, ZoneConnection source)
@@ -702,6 +739,8 @@ public class MovementRelay
                             _foreignZoneDrops++;
                             continue;
                         }
+                        if (mirrorUnit is Mate mate && DropStaleMateMovement(mate, unitMove, source))
+                            continue;
 
                         var suppressIdle = ShouldSuppressIdleUnitMove(mirrorUnit, unitMove);
                         RememberRelayedMotion(mirrorUnit, unitMove);
